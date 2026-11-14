@@ -1,0 +1,3953 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NEXUS MATH — Pembelajaran Interaktif Aljabar & SPLDV</title>
+
+  <!-- Google Fonts: Space Grotesk, Plus Jakarta Sans, JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            nexus: {
+              deep: '#0b1120',
+              slate: '#0f172a',
+              card: '#1e293b',
+              primary: '#6366f1',
+              sky: '#38bdf8',
+              teal: '#34d399',
+              amber: '#fbbf24'
+            }
+          },
+          fontFamily: {
+            sans: ['Plus Jakarta Sans', 'sans-serif'],
+            display: ['Space Grotesk', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace']
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- Custom Futuristic Styles -->
+  <link rel="stylesheet" href="css/custom.css" />
+
+  <!-- React 18 & Babel Standalone -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Sound Engine & Curriculum Dataset -->
+  <script src="js/sound.js"></script>
+  <script src="js/curriculum-data.js"></script>
+</head>
+<body class="cyber-grid-bg text-slate-100 antialiased selection:bg-cyan-500 selection:text-slate-950">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+
+    // ========================================================================
+    // MULTI-ACCOUNT PERSISTENT STORAGE SYSTEM (LOCALSTORAGE)
+    // Menyimpan seluruh progress tiap akun meskipun user klik "Keluar / Logout"
+    // ========================================================================
+    const DB_STORAGE_KEY = 'nexus_math_accounts_db_v2';
+    const ACTIVE_USER_KEY = 'nexus_math_active_account_v2';
+
+    const createInitialGameStats = () => ({
+      'game-speed': {
+        played: 0,
+        correct: 0,
+        totalAnswered: 0,
+        pointsEarned: 0,
+        totalTimeSec: 0,
+        bestByLevel: { 1: 0, 2: 0, 3: 0 }
+      },
+      'game-factor': {
+        played: 0,
+        correct: 0,
+        totalAnswered: 0,
+        pointsEarned: 0,
+        totalTimeSec: 0,
+        bestByLevel: { 1: 0, 2: 0, 3: 0 }
+      },
+      'game-hunter': {
+        played: 0,
+        correct: 0,
+        totalAnswered: 0,
+        pointsEarned: 0,
+        totalTimeSec: 0,
+        bestByLevel: { 1: 0, 2: 0, 3: 0 }
+      },
+      'game-graph': {
+        played: 0,
+        correct: 0,
+        totalAnswered: 0,
+        pointsEarned: 0,
+        totalTimeSec: 0,
+        bestByLevel: { 1: 0, 2: 0, 3: 0 }
+      }
+    });
+
+    const createBlankProfile = (userData) => ({
+      user: userData,
+      points: 0,
+      completedModules: [],
+      moduleQuizDone: {},
+      gameStats: createInitialGameStats(),
+      passionAnswers: {},
+      lastUpdated: new Date().toLocaleString('id-ID')
+    });
+
+    const makeAccountId = (name, kelas) =>
+      `${String(name).trim().toLowerCase()}__${String(kelas).trim().toUpperCase()}`;
+
+    const loadAccountsDB = () => {
+      try {
+        const raw = localStorage.getItem(DB_STORAGE_KEY);
+        if (!raw) return {};
+        return JSON.parse(raw) || {};
+      } catch (e) {
+        return {};
+      }
+    };
+
+    const saveAccountsDB = (db) => {
+      try {
+        localStorage.setItem(DB_STORAGE_KEY, JSON.stringify(db));
+      } catch (e) {}
+    };
+
+    const getLevelInfo = (points) => {
+      const level = Math.floor(points / 100) + 1;
+      const currentLevelProgress = points % 100;
+      const ranks = [
+        { min: 1, title: 'Cadet Variable', badge: '🌱', color: 'text-emerald-400' },
+        { min: 2, title: 'Algebra Scout', badge: '⚡', color: 'text-cyan-400' },
+        { min: 3, title: 'Factor Specialist', badge: '🔮', color: 'text-violet-400' },
+        { min: 4, title: 'Linear Strategist', badge: '🎯', color: 'text-orange-400' },
+        { min: 6, title: 'SPLDV Commander', badge: '🚀', color: 'text-emerald-300' },
+        { min: 8, title: 'Nexus Grandmaster', badge: '👑', color: 'text-amber-300' }
+      ];
+      let rank = ranks[0];
+      for (const r of ranks) {
+        if (level >= r.min) rank = r;
+      }
+      return { level, currentLevelProgress, nextLevelPoints: 100, rank };
+    };
+
+    // Helper: Generate all valid SMK classes
+    // Kelas: X, XI, XII
+    // Jurusan: KGS, TEK, TITL, TFLM, SIJA (pakai nomor 1 dan 2 saja)
+    // Jurusan: TKR, TBKR (tanpa nomor)
+    const generateValidClassList = () => {
+      const { grades, majors, numbers } = window.NEXUS_DATA.schoolConfig;
+      const list = [];
+      grades.forEach((g) => {
+        majors.forEach((m) => {
+          if (m.numbered) {
+            numbers.forEach((num) => {
+              list.push(`${g} ${m.code} ${num}`);
+            });
+          } else {
+            list.push(`${g} ${m.code}`);
+          }
+        });
+      });
+      return list;
+    };
+
+    // ========================================================================
+    // COMPONENT 1A: HALAMAN AWAL / LANDING PAGE (PENGENALAN WEB TERPISAH)
+    // ========================================================================
+    function LandingScreen({ accountsDB, onGoToLogin, onLoadDemo }) {
+      const savedCount = Object.keys(accountsDB || {}).length;
+
+      return (
+        <div className="min-h-screen flex flex-col justify-between relative overflow-hidden">
+          {/* Subtle Ambient Glows (Soft & Non-Clashing) */}
+          <div className="pointer-events-none fixed -top-32 left-1/4 w-[28rem] h-[28rem] rounded-full bg-indigo-500/10 blur-3xl"></div>
+          <div className="pointer-events-none fixed top-1/3 right-10 w-96 h-96 rounded-full bg-sky-500/10 blur-3xl"></div>
+
+          {/* Top Navigation Bar */}
+          <header className="max-w-6xl w-full mx-auto px-4 sm:px-6 py-5 flex items-center justify-between z-10">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-sky-500 flex items-center justify-center shadow-md font-display font-bold text-lg text-white">
+                ∑
+              </div>
+              <div>
+                <span className="text-[11px] font-mono uppercase tracking-wider text-sky-400 block">
+                  Interactive Math Learning
+                </span>
+                <h1 className="font-display font-bold text-lg tracking-tight text-white">
+                  NEXUS <span className="text-indigo-400">MATH</span>
+                </h1>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {savedCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.NexusSound.click();
+                    onGoToLogin();
+                  }}
+                  className="hidden sm:inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-mono transition"
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                  <span>{savedCount} Akun Tersimpan</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  window.NexusSound.click();
+                  onGoToLogin();
+                }}
+                className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-display font-semibold text-sm shadow-md shadow-indigo-600/20 transition flex items-center gap-2"
+              >
+                <span>Masuk / Login</span>
+                <span>→</span>
+              </button>
+            </div>
+          </header>
+
+          {/* Main Hero & Web Introduction Content */}
+          <main className="max-w-6xl w-full mx-auto px-4 sm:px-6 py-10 sm:py-14 space-y-16 z-10 animate-fade-slide">
+            {/* Hero Section (Full-Width Centered & Clean) */}
+            <section className="text-center max-w-3xl mx-auto space-y-6">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-400/25 text-indigo-300 text-xs font-mono">
+                <span>✨ MEDIA PEMBELAJARAN INTERAKTIF MATEMATIKA SMK</span>
+              </div>
+
+              <h2 className="font-display text-3xl sm:text-5xl font-bold leading-tight text-white tracking-tight">
+                Kuasai Materi{' '}
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-sky-300 to-teal-300">
+                  Aljabar &amp; SPLDV
+                </span>{' '}
+                dengan Lebih Mudah &amp; Seru
+              </h2>
+
+              <p className="text-slate-300 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">
+                Belajar konsep dasar matematika secara bertahap lewat modul ringkas, laboratorium visual interaktif, 4 mini-game edukatif, serta analisis bakat otomatis yang menyimpan progress belajarmu.
+              </p>
+
+              <div className="pt-2 flex flex-wrap items-center justify-center gap-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.NexusSound.click();
+                    onGoToLogin();
+                  }}
+                  className="px-7 py-4 rounded-2xl font-display font-bold text-base text-white bg-gradient-to-r from-indigo-600 to-sky-500 hover:from-indigo-500 hover:to-sky-400 shadow-lg shadow-indigo-600/25 transition flex items-center gap-2.5 active:scale-[0.99]"
+                >
+                  <span>🚀 Masuk untuk Mulai Belajar</span>
+                  <span>→</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onLoadDemo}
+                  className="px-6 py-4 rounded-2xl font-display font-semibold text-sm text-slate-200 bg-slate-800/80 hover:bg-slate-800 border border-slate-700 hover:border-slate-600 transition"
+                >
+                  ⚡ Coba Akun Demo (XI SIJA 1)
+                </button>
+              </div>
+
+              {savedCount > 0 && (
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.NexusSound.click();
+                      onGoToLogin();
+                    }}
+                    className="text-xs font-mono text-emerald-400 hover:text-emerald-300 underline underline-offset-4"
+                  >
+                    💾 Ada {savedCount} akun belajar yang tersimpan di perangkat ini — Klik untuk melanjutkan
+                  </button>
+                </div>
+              )}
+            </section>
+
+            {/* 4 Key Features Grid */}
+            <section className="space-y-6">
+              <div className="text-center space-y-1">
+                <span className="text-xs font-mono uppercase tracking-wider text-sky-400">
+                  FITUR UNGGULAN PORTAL
+                </span>
+                <h3 className="font-display text-2xl font-bold text-white">
+                  Apa Saja yang Ada di Dalam NEXUS MATH?
+                </h3>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                <div className="glass-card rounded-2xl p-6 space-y-3">
+                  <div className="w-11 h-11 rounded-xl bg-indigo-500/15 border border-indigo-400/25 flex items-center justify-center text-xl">
+                    📘
+                  </div>
+                  <div className="text-xs font-mono text-indigo-300 font-semibold">
+                    01 • MODUL MATERI 0/10
+                  </div>
+                  <h4 className="font-display font-bold text-lg text-white">
+                    Materi Ringkas &amp; Jelas
+                  </h4>
+                  <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                    Terdiri dari 5 modul Aljabar dan 5 modul SPLDV lengkap dengan rumus inti, contoh pembahasan bertahap, dan kuis pemahaman cepat.
+                  </p>
+                </div>
+
+                <div className="glass-card rounded-2xl p-6 space-y-3">
+                  <div className="w-11 h-11 rounded-xl bg-sky-500/15 border border-sky-400/25 flex items-center justify-center text-xl">
+                    🔬
+                  </div>
+                  <div className="text-xs font-mono text-sky-300 font-semibold">
+                    02 • LAB SIMULATOR
+                  </div>
+                  <h4 className="font-display font-bold text-lg text-white">
+                    Eksperimen Rumus Visual
+                  </h4>
+                  <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                    Geser nilai koefisien secara langsung untuk melihat perubahan pemfaktoran kuadrat dan titik potong garis SPLDV secara real-time.
+                  </p>
+                </div>
+
+                <div className="glass-card rounded-2xl p-6 space-y-3">
+                  <div className="w-11 h-11 rounded-xl bg-emerald-500/15 border border-emerald-400/25 flex items-center justify-center text-xl">
+                    🎮
+                  </div>
+                  <div className="text-xs font-mono text-emerald-300 font-semibold">
+                    03 • 4 MINI-GAME EDUKATIF
+                  </div>
+                  <h4 className="font-display font-bold text-lg text-white">
+                    Variasi Game Interaktif
+                  </h4>
+                  <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                    Latihan tidak membosankan dengan mekanik Drag &amp; Drop Suku Sejenis, Kotak Misteri Aljabar, Boss Battle RPG, dan Radar Koordinat.
+                  </p>
+                </div>
+
+                <div className="glass-card rounded-2xl p-6 space-y-3">
+                  <div className="w-11 h-11 rounded-xl bg-amber-500/15 border border-amber-400/25 flex items-center justify-center text-xl">
+                    🧠
+                  </div>
+                  <div className="text-xs font-mono text-amber-300 font-semibold">
+                    04 • ANALISIS &amp; AUTO-SAVE
+                  </div>
+                  <h4 className="font-display font-bold text-lg text-white">
+                    Analisis Bakat &amp; Simpan Akun
+                  </h4>
+                  <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                    Temukan kecenderungan minatmu antara Aljabar atau SPLDV. Seluruh progress otomatis tersimpan meskipun kamu keluar dari akun.
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            {/* Curriculum & Game Preview Section */}
+            <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="glass-panel rounded-2xl p-6 sm:p-7 space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="px-3 py-1 rounded-full text-xs font-mono bg-emerald-500/10 text-emerald-300 border border-emerald-500/25">
+                    BAGIAN A • ALJABAR
+                  </span>
+                  <span className="text-xs font-mono text-slate-400">5 Sub-Materi + 2 Game</span>
+                </div>
+                <h4 className="font-display text-xl font-bold text-white">
+                  Eksplorasi Konsep Aljabar Dasar
+                </h4>
+                <ul className="space-y-2 text-xs sm:text-sm text-slate-300">
+                  <li className="flex items-center gap-2.5">
+                    <span className="text-emerald-400">✓</span>
+                    <span>Mengenal Variabel, Koefisien, Konstanta &amp; Suku Sejenis</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <span className="text-emerald-400">✓</span>
+                    <span>Sifat Distributif, Selisih Dua Kuadrat &amp; Pemfaktoran Ringan</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <span className="text-emerald-400">✓</span>
+                    <span>Mini-Game: <strong>Aljabar Speed Matcher</strong> &amp; <strong>Kotak Misteri Aljabar</strong></span>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="glass-panel rounded-2xl p-6 sm:p-7 space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="px-3 py-1 rounded-full text-xs font-mono bg-sky-500/10 text-sky-300 border border-sky-500/25">
+                    BAGIAN B • SPLDV
+                  </span>
+                  <span className="text-xs font-mono text-slate-400">5 Sub-Materi + 2 Game</span>
+                </div>
+                <h4 className="font-display text-xl font-bold text-white">
+                  Sistem Persamaan Linear Dua Variabel
+                </h4>
+                <ul className="space-y-2 text-xs sm:text-sm text-slate-300">
+                  <li className="flex items-center gap-2.5">
+                    <span className="text-sky-400">✓</span>
+                    <span>Pemodelan Soal Cerita &amp; Membaca Titik Potong Grafik</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <span className="text-sky-400">✓</span>
+                    <span>Metode Substitusi, Eliminasi (SA-KU BE-JUM), &amp; Campuran</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <span className="text-sky-400">✓</span>
+                    <span>Mini-Game: <strong>SPLDV Boss Battle RPG</strong> &amp; <strong>Radar Koordinat</strong></span>
+                  </li>
+                </ul>
+              </div>
+            </section>
+
+            {/* Bottom Call To Action Banner */}
+            <section className="glass-panel rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-6 border border-indigo-500/25">
+              <div className="space-y-1 text-center sm:text-left">
+                <h4 className="font-display text-xl font-bold text-white">
+                  Siap Memulai Pembelajaran?
+                </h4>
+                <p className="text-xs sm:text-sm text-slate-300">
+                  Masuk menggunakan Nama dan Kelas SMK-mu (X, XI, XII — KGS, TEK, TITL, TFLM, TKR, TBKR, SIJA).
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  window.NexusSound.click();
+                  onGoToLogin();
+                }}
+                className="px-6 py-3.5 rounded-xl font-display font-bold text-sm text-white bg-indigo-600 hover:bg-indigo-500 transition shadow-md shrink-0"
+              >
+                Buka Halaman Login →
+              </button>
+            </section>
+          </main>
+
+          <footer className="max-w-6xl w-full mx-auto px-4 py-6 text-center text-xs text-slate-500 border-t border-slate-800/80 z-10">
+            NEXUS MATH • Media Pembelajaran Interaktif Aljabar &amp; Sistem Persamaan Linear Dua Variabel (SPLDV)
+          </footer>
+        </div>
+      );
+    }
+
+    // ========================================================================
+    // COMPONENT 1B: HALAMAN LOGIN KHUSUS (TERPISAH DARI HALAMAN AWAL)
+    // ========================================================================
+    function LoginScreen({ accountsDB, onBackToLanding, onLogin, onDeleteSavedAccount, onLoadDemo }) {
+      const { grades, majors, numbers } = window.NEXUS_DATA.schoolConfig;
+
+      const [name, setName] = useState('');
+      const [selectedGrade, setSelectedGrade] = useState('XI');
+      const [selectedMajor, setSelectedMajor] = useState('SIJA');
+      const [selectedNumber, setSelectedNumber] = useState('1');
+      const [avatar, setAvatar] = useState('🦸‍♂️');
+      const [error, setError] = useState('');
+
+      const avatars = ['🦸‍♂️', '🦸‍♀️', '🤖', '🥷', '🧙‍♂️', '🚀'];
+
+      const majorObj = majors.find((m) => m.code === selectedMajor) || majors[0];
+      const isNumberedMajor = majorObj.numbered;
+
+      // Format Kelas Otomatis: contoh "XI SIJA 1", "XI SIJA 2", atau "XI TKR", "XI TBKR"
+      const formattedKelas = isNumberedMajor
+        ? `${selectedGrade} ${selectedMajor} ${selectedNumber}`
+        : `${selectedGrade} ${selectedMajor}`;
+
+      const savedAccountsList = Object.entries(accountsDB || {});
+
+      const matchingSavedId = name.trim()
+        ? makeAccountId(name, formattedKelas)
+        : null;
+      const existingProfile =
+        matchingSavedId && accountsDB[matchingSavedId]
+          ? accountsDB[matchingSavedId]
+          : null;
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        const trimmedName = name.trim();
+        if (!trimmedName) {
+          setError('Harap masukkan Nama atau Username kamu terlebih dahulu!');
+          window.NexusSound.wrong();
+          return;
+        }
+        window.NexusSound.levelUp();
+        onLogin({
+          name: trimmedName,
+          kelas: formattedKelas,
+          avatar
+        });
+      };
+
+      return (
+        <div className="min-h-screen flex flex-col justify-between relative overflow-hidden px-4 py-6 sm:py-8">
+          <div className="pointer-events-none fixed -top-32 left-1/3 w-96 h-96 rounded-full bg-indigo-500/10 blur-3xl"></div>
+          <div className="pointer-events-none fixed bottom-0 right-1/4 w-96 h-96 rounded-full bg-sky-500/10 blur-3xl"></div>
+
+          {/* Header Navigation with Back to Landing Button */}
+          <header className="max-w-3xl w-full mx-auto flex items-center justify-between z-10">
+            <button
+              type="button"
+              onClick={() => {
+                window.NexusSound.click();
+                onBackToLanding();
+              }}
+              className="px-4 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-mono font-semibold transition flex items-center gap-2"
+            >
+              <span>←</span>
+              <span>Kembali ke Halaman Awal</span>
+            </button>
+
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-sky-500 flex items-center justify-center font-display font-bold text-sm text-white">
+                ∑
+              </div>
+              <span className="font-display font-bold text-sm text-white">
+                NEXUS <span className="text-indigo-400">MATH</span>
+              </span>
+            </div>
+          </header>
+
+          {/* Centered Dedicated Login Content */}
+          <main className="max-w-xl w-full mx-auto my-auto py-8 space-y-6 z-10 animate-fade-slide">
+            {/* Saved Accounts Section (if any) */}
+            {savedAccountsList.length > 0 && (
+              <div className="glass-panel rounded-2xl p-5 space-y-3 border border-slate-700/80">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-mono uppercase font-bold text-emerald-400">
+                    💾 Akun Tersimpan (Klik untuk Lanjut Belajar)
+                  </span>
+                  <span className="text-[11px] font-mono text-slate-400">
+                    {savedAccountsList.length} Akun
+                  </span>
+                </div>
+
+                <div className="space-y-2.5 max-h-52 overflow-y-auto pr-1">
+                  {savedAccountsList.map(([accId, prof]) => {
+                    const lv = getLevelInfo(prof.points || 0).level;
+                    const modDone = (prof.completedModules || []).length;
+                    return (
+                      <div
+                        key={accId}
+                        className="p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800/90 border border-slate-700/80 hover:border-indigo-400/50 transition flex items-center justify-between gap-3"
+                      >
+                        <div
+                          onClick={() => {
+                            window.NexusSound.levelUp();
+                            onLogin(prof.user);
+                          }}
+                          className="flex items-center gap-3 cursor-pointer flex-1 min-w-0"
+                        >
+                          <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-xl shrink-0">
+                            {prof.user.avatar || '🦸‍♂️'}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-display font-bold text-white text-sm truncate">
+                              {prof.user.name}{' '}
+                              <span className="text-xs font-mono text-sky-400 font-normal">
+                                ({prof.user.kelas})
+                              </span>
+                            </div>
+                            <div className="text-[11px] font-mono text-slate-400 mt-0.5">
+                              💎 {prof.points || 0} PTS • Lv.{lv} • Materi {modDone}/10
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              window.NexusSound.levelUp();
+                              onLogin(prof.user);
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-display font-semibold text-xs transition"
+                          >
+                            Masuk ▶
+                          </button>
+                          <button
+                            type="button"
+                            title="Hapus Akun Ini"
+                            onClick={() => onDeleteSavedAccount(accId)}
+                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-red-500/20 text-slate-400 hover:text-red-300 text-xs transition"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Main Login Card */}
+            <div className="glass-panel rounded-2xl p-6 sm:p-8 border border-slate-700/80 relative overflow-hidden">
+              <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-indigo-500 via-sky-400 to-teal-400"></div>
+
+              <div className="mb-6 text-center">
+                <span className="text-xs font-mono uppercase tracking-widest text-indigo-400">
+                  Login Siswa
+                </span>
+                <h2 className="font-display text-2xl font-bold text-white mt-1">
+                  Masuk ke Akun Belajarmu
+                </h2>
+                <p className="text-slate-400 text-xs mt-1">
+                  Masukkan nama dan pilih kelasmu. Progress belajar otomatis tersimpan di akunmu.
+                </p>
+              </div>
+
+              {error && (
+                <div className="mb-4 p-3 rounded-xl bg-red-500/15 border border-red-500/40 text-red-200 text-xs flex items-center gap-2 animate-shake">
+                  <span>⚠️</span>
+                  <span>{error}</span>
+                </div>
+              )}
+
+              {existingProfile && (
+                <div className="mb-4 p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-200 text-xs font-mono">
+                  ✓ Akun ditemukan ({existingProfile.points} Poin, Materi {existingProfile.completedModules.length}/10). Klik tombol di bawah untuk melanjutkan!
+                </div>
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-5">
+                {/* Avatar Picker */}
+                <div>
+                  <label className="block text-xs font-mono uppercase text-slate-300 mb-2">
+                    Pilih Karakter Avatar
+                  </label>
+                  <div className="grid grid-cols-6 gap-2">
+                    {avatars.map((av) => (
+                      <button
+                        key={av}
+                        type="button"
+                        onClick={() => {
+                          window.NexusSound.click();
+                          setAvatar(av);
+                        }}
+                        className={`h-11 rounded-xl text-xl flex items-center justify-center border transition-all ${
+                          avatar === av
+                            ? 'bg-indigo-600/30 border-indigo-400 scale-105 shadow-sm'
+                            : 'bg-slate-900/80 border-slate-700/80 hover:border-slate-500'
+                        }`}
+                      >
+                        {av}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Input Nama / Username */}
+                <div>
+                  <label htmlFor="input-nama" className="block text-xs font-mono uppercase text-slate-300 mb-1.5">
+                    Nama Lengkap / Username <span className="text-sky-400">*</span>
+                  </label>
+                  <input
+                    id="input-nama"
+                    type="text"
+                    value={name}
+                    onChange={(e) => {
+                      setName(e.target.value);
+                      if (error) setError('');
+                    }}
+                    placeholder="Contoh: Budi Santoso"
+                    className="w-full px-4 py-3 rounded-xl bg-slate-900/90 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 transition"
+                  />
+                </div>
+
+                {/* SMK Class Builder */}
+                <div className="p-4 rounded-2xl bg-slate-900/75 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono uppercase text-slate-300">
+                      Pilih Kelas &amp; Jurusan <span className="text-sky-400">*</span>
+                    </span>
+                    <span className="px-2.5 py-1 rounded-lg bg-indigo-500/15 border border-indigo-400/30 text-indigo-300 font-mono text-xs font-bold">
+                      {formattedKelas}
+                    </span>
+                  </div>
+
+                  {/* 1. Pilih Tingkat Kelas: X, XI, XII */}
+                  <div>
+                    <div className="text-[11px] font-mono text-slate-400 mb-1.5">
+                      1. Tingkat Kelas:
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {grades.map((g) => (
+                        <button
+                          key={g}
+                          type="button"
+                          onClick={() => {
+                            window.NexusSound.click();
+                            setSelectedGrade(g);
+                          }}
+                          className={`py-2 rounded-xl font-display font-semibold text-sm border transition ${
+                            selectedGrade === g
+                              ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
+                              : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:border-slate-500'
+                          }`}
+                        >
+                          Kelas {g}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 2. Pilih Jurusan */}
+                  <div>
+                    <div className="text-[11px] font-mono text-slate-400 mb-1.5">
+                      2. Jurusan:
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {majors.map((m) => (
+                        <button
+                          key={m.code}
+                          type="button"
+                          onClick={() => {
+                            window.NexusSound.click();
+                            setSelectedMajor(m.code);
+                          }}
+                          className={`py-2 px-2 rounded-xl font-mono font-semibold text-xs border transition ${
+                            selectedMajor === m.code
+                              ? 'bg-sky-500 text-slate-950 border-sky-400 font-bold shadow-sm'
+                              : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:border-slate-500'
+                          }`}
+                        >
+                          {m.code}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 3. Pilih Nomor Rombel (1 atau 2) */}
+                  {isNumberedMajor ? (
+                    <div>
+                      <div className="text-[11px] font-mono text-slate-400 mb-1.5">
+                        3. Nomor Kelas ({selectedMajor} tersedia 1 dan 2):
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {numbers.map((num) => (
+                          <button
+                            key={num}
+                            type="button"
+                            onClick={() => {
+                              window.NexusSound.click();
+                              setSelectedNumber(num);
+                            }}
+                            className={`py-2 rounded-xl font-mono font-semibold text-xs border transition ${
+                              selectedNumber === num
+                                ? 'bg-teal-500 text-slate-950 border-teal-400 font-bold shadow-sm'
+                                : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:border-slate-500'
+                            }`}
+                          >
+                            {selectedGrade} {selectedMajor} {num}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-2.5 rounded-xl bg-slate-800/70 border border-slate-700 text-[11px] font-mono text-slate-300 text-center">
+                      ℹ️ Jurusan <strong>{selectedMajor}</strong> tidak menggunakan nomor kelas → <strong className="text-sky-300">{formattedKelas}</strong>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-3.5 px-6 rounded-xl font-display font-bold text-white bg-gradient-to-r from-indigo-600 to-sky-500 hover:from-indigo-500 hover:to-sky-400 active:scale-[0.99] transition shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 text-base"
+                >
+                  <span>
+                    {existingProfile
+                      ? `🚀 Lanjutkan Belajar (${formattedKelas})`
+                      : `🚀 Mulai Belajar (${formattedKelas})`}
+                  </span>
+                </button>
+              </form>
+
+              <div className="mt-5 pt-4 border-t border-slate-800 flex items-center justify-between gap-2">
+                <span className="text-xs text-slate-400">
+                  Ingin mencoba dengan data contoh?
+                </span>
+                <button
+                  type="button"
+                  onClick={onLoadDemo}
+                  className="text-xs font-mono text-sky-400 hover:text-sky-300 underline underline-offset-4"
+                >
+                  ⚡ Muat Akun Demo (XI SIJA 1)
+                </button>
+              </div>
+            </div>
+          </main>
+
+          <footer className="max-w-3xl w-full mx-auto text-center text-xs text-slate-500 z-10">
+            NEXUS MATH • Portal Pembelajaran Aljabar &amp; SPLDV
+          </footer>
+        </div>
+      );
+    }
+
+    // ========================================================================
+    // COMPONENT 2: DASHBOARD UTAMA
+    // ========================================================================
+    function DashboardView({ state, setActiveTab, onOpenModule, onOpenGame }) {
+      const { user, points, completedModules, gameStats } = state;
+      const levelInfo = getLevelInfo(points);
+
+      const aljabarModulesDone = completedModules.filter((id) => id.startsWith('alg-')).length;
+      const spldvModulesDone = completedModules.filter((id) => id.startsWith('spldv-')).length;
+      const totalModulesDone = completedModules.length;
+
+      const totalQuestionsAnswered = Object.values(gameStats).reduce(
+        (acc, g) => acc + (g.totalAnswered || 0),
+        0
+      );
+      const totalCorrect = Object.values(gameStats).reduce(
+        (acc, g) => acc + (g.correct || 0),
+        0
+      );
+      const overallAccuracy =
+        totalQuestionsAnswered > 0
+          ? Math.round((totalCorrect / totalQuestionsAnswered) * 100)
+          : 0;
+
+      const totalGamesPlayed = Object.values(gameStats).reduce(
+        (acc, g) => acc + (g.played || 0),
+        0
+      );
+
+      return (
+        <div className="space-y-6 animate-fade-slide">
+          <div className="glass-panel rounded-2xl p-6 sm:p-8 border border-slate-800 relative overflow-hidden">
+            <div className="absolute -right-12 -top-12 w-60 h-60 rounded-full bg-indigo-500/10 blur-2xl pointer-events-none"></div>
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+              <div className="flex items-start sm:items-center gap-4">
+                <div className="w-16 h-16 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-3xl shadow-md shrink-0">
+                  {user.avatar || '🦸‍♂️'}
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-mono bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
+                      KELAS {user.kelas} • AUTO-SAVED ✓
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-mono bg-slate-800 border border-slate-700 text-sky-300">
+                      {levelInfo.rank.badge} {levelInfo.rank.title}
+                    </span>
+                  </div>
+                  <h2 className="font-display text-2xl sm:text-3xl font-bold text-white mt-1.5">
+                    Selamat Datang, <span className="text-sky-400">{user.name}</span>! 👋
+                  </h2>
+                  <p className="text-slate-300 text-sm mt-1">
+                    Seluruh poin dan progress belajarmu di kelas <strong className="text-white">{user.kelas}</strong> otomatis tersimpan di akunmu.
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:min-w-[270px]">
+                <div className="flex items-center justify-between text-xs font-mono mb-1.5">
+                  <span className="text-sky-400 font-bold">LEVEL {levelInfo.level}</span>
+                  <span className="text-emerald-400 font-bold">{points} TOTAL POIN</span>
+                </div>
+                <div className="w-full h-2.5 rounded-full bg-slate-800 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-indigo-500 to-sky-400 transition-all duration-500"
+                    style={{ width: `${Math.max(6, levelInfo.currentLevelProgress)}%` }}
+                  ></div>
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-slate-400 mt-1.5 font-mono">
+                  <span>Progress Level {levelInfo.level}</span>
+                  <span>{100 - levelInfo.currentLevelProgress} Poin ke Lv.{levelInfo.level + 1}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 4 Main HUD Metric Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="glass-card rounded-2xl p-5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono uppercase text-slate-400">Total Poin Terkumpul</span>
+                <span className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-lg">
+                  💎
+                </span>
+              </div>
+              <div className="font-display text-3xl font-bold text-white mt-2">
+                {points.toLocaleString('id-ID')} <span className="text-sm font-mono text-emerald-400">PTS</span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Tersimpan otomatis di akun {user.name}
+              </p>
+            </div>
+
+            <div className="glass-card rounded-2xl p-5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono uppercase text-slate-400">Level Keseluruhan</span>
+                <span className="w-9 h-9 rounded-xl bg-sky-500/10 border border-sky-500/25 flex items-center justify-center text-lg">
+                  ⚡
+                </span>
+              </div>
+              <div className="font-display text-3xl font-bold text-white mt-2">
+                Level {levelInfo.level}
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Rank: <span className="text-sky-300 font-semibold">{levelInfo.rank.title}</span>
+              </p>
+            </div>
+
+            <div className="glass-card rounded-2xl p-5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono uppercase text-slate-400">Progress Materi</span>
+                <span className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/25 flex items-center justify-center text-lg">
+                  📚
+                </span>
+              </div>
+              <div className="font-display text-3xl font-bold text-white mt-2">
+                {totalModulesDone}/10 <span className="text-sm font-mono text-indigo-300">Modul</span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Aljabar: {aljabarModulesDone}/5 • SPLDV: {spldvModulesDone}/5
+              </p>
+            </div>
+
+            <div className="glass-card rounded-2xl p-5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono uppercase text-slate-400">Ketelitian Aksi Game</span>
+                <span className="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-lg">
+                  🎯
+                </span>
+              </div>
+              <div className="font-display text-3xl font-bold text-white mt-2">
+                {overallAccuracy}%
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                {totalCorrect} tepat dari {totalQuestionsAnswered} tantangan ({totalGamesPlayed} sesi)
+              </p>
+            </div>
+          </div>
+
+          {/* Middle Section */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="lg:col-span-7 glass-panel rounded-2xl p-6 space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-mono text-indigo-400 uppercase tracking-wider">
+                    Curriculum Overview
+                  </span>
+                  <h3 className="font-display text-xl font-bold text-white">
+                    Ringkasan Progress Materi ({totalModulesDone}/10)
+                  </h3>
+                </div>
+                <button
+                  onClick={() => {
+                    window.NexusSound.click();
+                    setActiveTab('materi');
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-mono font-semibold transition"
+                >
+                  Buka Semua Materi →
+                </button>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800">
+                <div className="flex justify-between text-xs font-mono mb-2">
+                  <span className="text-slate-300">TOTAL PENYELESAIAN SUB-MATERI</span>
+                  <span className="text-emerald-400 font-bold">{totalModulesDone}/10 Selesai ({totalModulesDone * 10}%)</span>
+                </div>
+                <div className="w-full h-2.5 rounded-full bg-slate-800 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 transition-all duration-500"
+                    style={{ width: `${totalModulesDone * 10}%` }}
+                  ></div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="px-2.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 font-mono text-xs font-semibold">
+                        BAGIAN A
+                      </span>
+                      <span className="font-mono text-sm font-bold text-emerald-400">
+                        {aljabarModulesDone}/5 Selesai
+                      </span>
+                    </div>
+                    <h4 className="font-display font-bold text-lg text-white mt-2">
+                      Modul Aljabar
+                    </h4>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Konsep dasar, suku sejenis, perkalian kurung, selisih kuadrat, &amp; faktorisasi ringan.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => onOpenModule('aljabar')}
+                    className="mt-4 w-full py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold transition"
+                  >
+                    Pelajari Modul Aljabar
+                  </button>
+                </div>
+
+                <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="px-2.5 py-0.5 rounded-md bg-sky-500/15 text-sky-300 font-mono text-xs font-semibold">
+                        BAGIAN B
+                      </span>
+                      <span className="font-mono text-sm font-bold text-sky-400">
+                        {spldvModulesDone}/5 Selesai
+                      </span>
+                    </div>
+                    <h4 className="font-display font-bold text-lg text-white mt-2">
+                      Modul SPLDV
+                    </h4>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Soal cerita ringan, membaca titik potong grafik, substitusi, eliminasi, &amp; campuran.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => onOpenModule('spldv')}
+                    className="mt-4 w-full py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold transition"
+                  >
+                    Pelajari Modul SPLDV
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="lg:col-span-5 glass-panel rounded-2xl p-6 flex flex-col justify-between space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <span className="text-xs font-mono text-sky-400 uppercase tracking-wider">
+                      Game Center Arena
+                    </span>
+                    <h3 className="font-display text-xl font-bold text-white">
+                      4 Mini-Game Belajar Ringan
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => {
+                      window.NexusSound.click();
+                      setActiveTab('games');
+                    }}
+                    className="text-xs font-mono text-sky-400 hover:underline"
+                  >
+                    Semua Game →
+                  </button>
+                </div>
+
+                <div className="space-y-2.5">
+                  {window.NEXUS_DATA.games.map((g) => {
+                    const st = gameStats[g.id] || {};
+                    return (
+                      <div
+                        key={g.id}
+                        onClick={() => onOpenGame(g.id)}
+                        className="cursor-pointer p-3 rounded-xl bg-slate-900/85 hover:bg-slate-800/90 border border-slate-800 hover:border-indigo-500/40 transition flex items-center justify-between gap-3"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-10 h-10 rounded-xl flex items-center justify-center font-display font-bold text-sm ${
+                              g.category === 'aljabar'
+                                ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                                : 'bg-sky-500/15 text-sky-300 border border-sky-500/30'
+                            }`}
+                          >
+                            G{g.number}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-sm text-white">{g.title}</div>
+                            <div className="text-[11px] text-slate-400 font-mono">
+                              {g.badge} • {st.pointsEarned || 0} Poin
+                            </div>
+                          </div>
+                        </div>
+                        <span className="px-3 py-1 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 text-xs font-mono font-semibold shrink-0">
+                          Main ▶
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs font-mono text-sky-400 font-bold">
+                    🧠 ANALISIS PASSION OTOMATIS
+                  </div>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    Lihat apakah bakatmu lebih condong ke Aljabar atau SPLDV!
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    window.NexusSound.click();
+                    setActiveTab('passion');
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-display font-semibold text-xs shrink-0 transition"
+                >
+                  Lihat Hasil
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ========================================================================
+    // COMPONENT 3: FITUR MATERI (ALJABAR & SPLDV) + INTERACTIVE SIMULATORS
+    // ========================================================================
+    function MateriView({
+      state,
+      initialCategory,
+      onToggleCompleteModule,
+      onAnswerMiniQuiz
+    }) {
+      const [categoryFilter, setCategoryFilter] = useState(initialCategory || 'all');
+      const [selectedModuleId, setSelectedModuleId] = useState('alg-1');
+
+      const [simP, setSimP] = useState(2);
+      const [simQ, setSimQ] = useState(3);
+      const [spldvSim, setSpldvSim] = useState({ a1: 1, b1: 1, c1: 5, a2: 1, b2: -1, c2: 1 });
+
+      useEffect(() => {
+        if (initialCategory === 'aljabar') {
+          setCategoryFilter('aljabar');
+          setSelectedModuleId('alg-1');
+        } else if (initialCategory === 'spldv') {
+          setCategoryFilter('spldv');
+          setSelectedModuleId('spldv-1');
+        }
+      }, [initialCategory]);
+
+      const modules = window.NEXUS_DATA.modules;
+      const completedModules = state.completedModules || [];
+      const totalDone = completedModules.length;
+      const aljabarDone = completedModules.filter((id) => id.startsWith('alg-')).length;
+      const spldvDone = completedModules.filter((id) => id.startsWith('spldv-')).length;
+
+      const filteredModules = modules.filter((m) =>
+        categoryFilter === 'all' ? true : m.category === categoryFilter
+      );
+
+      const activeModule =
+        modules.find((m) => m.id === selectedModuleId) || filteredModules[0] || modules[0];
+
+      const isCurrentCompleted = completedModules.includes(activeModule.id);
+      const selectedQuizAnswer = state.moduleQuizDone[activeModule.id];
+
+      const spldvSolution = useMemo(() => {
+        const { a1, b1, c1, a2, b2, c2 } = spldvSim;
+        const det = a1 * b2 - a2 * b1;
+        if (det === 0) return { valid: false, message: 'Kedua garis sejajar atau berimpit (Determinan = 0)' };
+        const x = (c1 * b2 - c2 * b1) / det;
+        const y = (a1 * c2 - a2 * c1) / det;
+        return {
+          valid: true,
+          x: Number.isInteger(x) ? x : x.toFixed(2),
+          y: Number.isInteger(y) ? y : y.toFixed(2),
+          det
+        };
+      }, [spldvSim]);
+
+      return (
+        <div className="space-y-6 animate-fade-slide">
+          <div className="glass-panel rounded-2xl p-6 border border-slate-800">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-mono bg-indigo-500/15 text-indigo-300 border border-indigo-400/30">
+                    MODUL INTERAKTIF RINGAN
+                  </span>
+                  <span className="text-xs font-mono text-slate-400">
+                    +5 Poin setiap sub-materi selesai
+                  </span>
+                </div>
+                <h2 className="font-display text-2xl sm:text-3xl font-bold text-white mt-1">
+                  Pusat Materi Aljabar &amp; SPLDV
+                </h2>
+                <p className="text-slate-300 text-sm">
+                  Pelajari sub-materi dengan santai dan klik tombol <strong className="text-emerald-400">&quot;Tandai Selesai&quot;</strong> untuk menaikkan progress belajarmu!
+                </p>
+              </div>
+
+              <div className="bg-slate-900/90 border border-slate-700/80 rounded-2xl px-5 py-3.5 flex items-center gap-4 shrink-0">
+                <div className="text-right">
+                  <div className="text-[11px] font-mono uppercase text-slate-400">
+                    Progress Materi
+                  </div>
+                  <div className="font-display text-3xl font-extrabold text-white">
+                    {totalDone}<span className="text-lg text-slate-400">/10</span>
+                  </div>
+                  <div className="text-[11px] font-mono text-sky-400">
+                    Aljabar {aljabarDone}/5 • SPLDV {spldvDone}/5
+                  </div>
+                </div>
+                <div className="w-12 h-12 rounded-xl bg-indigo-500/15 border border-indigo-400/30 flex items-center justify-center text-2xl">
+                  {totalDone === 10 ? '🏆' : '📘'}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <div className="w-full h-2.5 rounded-full bg-slate-800 overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-indigo-500 via-sky-400 to-emerald-400 transition-all duration-500"
+                  style={{ width: `${totalDone * 10}%` }}
+                ></div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 mt-5 pt-4 border-t border-slate-800">
+              <button
+                onClick={() => {
+                  window.NexusSound.click();
+                  setCategoryFilter('all');
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-mono font-semibold transition ${
+                  categoryFilter === 'all'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-700/80'
+                }`}
+              >
+                Semua Modul ({totalDone}/10)
+              </button>
+              <button
+                onClick={() => {
+                  window.NexusSound.click();
+                  setCategoryFilter('aljabar');
+                  setSelectedModuleId('alg-1');
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-mono font-semibold transition ${
+                  categoryFilter === 'aljabar'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'bg-slate-900 text-emerald-300 hover:bg-slate-800 border border-slate-700/80'
+                }`}
+              >
+                a. Modul Aljabar ({aljabarDone}/5)
+              </button>
+              <button
+                onClick={() => {
+                  window.NexusSound.click();
+                  setCategoryFilter('spldv');
+                  setSelectedModuleId('spldv-1');
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-mono font-semibold transition ${
+                  categoryFilter === 'spldv'
+                    ? 'bg-sky-600 text-white shadow-sm'
+                    : 'bg-slate-900 text-sky-300 hover:bg-slate-800 border border-slate-700/80'
+                }`}
+              >
+                b. Modul SPLDV ({spldvDone}/5)
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            <div className="lg:col-span-4 space-y-4">
+              {(categoryFilter === 'all' || categoryFilter === 'aljabar') && (
+                <div className="glass-panel rounded-2xl p-4 border border-slate-800">
+                  <div className="flex items-center justify-between mb-3 px-1">
+                    <span className="text-xs font-mono font-bold uppercase text-emerald-400">
+                      🅰 BAGIAN 1: MODUL ALJABAR
+                    </span>
+                    <span className="text-xs font-mono text-emerald-300 bg-emerald-500/15 px-2 py-0.5 rounded-md">
+                      {aljabarDone}/5
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {modules
+                      .filter((m) => m.category === 'aljabar')
+                      .map((m) => {
+                        const done = completedModules.includes(m.id);
+                        const active = activeModule.id === m.id;
+                        return (
+                          <button
+                            key={m.id}
+                            onClick={() => {
+                              window.NexusSound.click();
+                              setSelectedModuleId(m.id);
+                            }}
+                            className={`w-full text-left p-3 rounded-xl border transition flex items-start gap-3 ${
+                              active
+                                ? 'bg-indigo-600/20 border-indigo-400/70'
+                                : done
+                                ? 'bg-slate-900/90 border-emerald-500/35 hover:border-emerald-400/60'
+                                : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
+                            }`}
+                          >
+                            <div
+                              className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-mono font-bold shrink-0 mt-0.5 ${
+                                done
+                                  ? 'bg-emerald-500 text-slate-950'
+                                  : active
+                                  ? 'bg-indigo-500 text-white'
+                                  : 'bg-slate-800 text-slate-300'
+                              }`}
+                            >
+                              {done ? '✓' : m.index}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="text-[10px] font-mono text-emerald-400">
+                                  {m.code}
+                                </span>
+                                <span className="text-[10px] font-mono text-slate-400">
+                                  {done ? 'Selesai ✓' : `+${m.xpReward} PTS`}
+                                </span>
+                              </div>
+                              <div className="text-xs font-semibold text-white line-clamp-2 mt-0.5">
+                                {m.title}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+
+              {(categoryFilter === 'all' || categoryFilter === 'spldv') && (
+                <div className="glass-panel rounded-2xl p-4 border border-slate-800">
+                  <div className="flex items-center justify-between mb-3 px-1">
+                    <span className="text-xs font-mono font-bold uppercase text-sky-400">
+                      🅱 BAGIAN 2: MODUL SPLDV
+                    </span>
+                    <span className="text-xs font-mono text-sky-300 bg-sky-500/15 px-2 py-0.5 rounded-md">
+                      {spldvDone}/5
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {modules
+                      .filter((m) => m.category === 'spldv')
+                      .map((m) => {
+                        const done = completedModules.includes(m.id);
+                        const active = activeModule.id === m.id;
+                        return (
+                          <button
+                            key={m.id}
+                            onClick={() => {
+                              window.NexusSound.click();
+                              setSelectedModuleId(m.id);
+                            }}
+                            className={`w-full text-left p-3 rounded-xl border transition flex items-start gap-3 ${
+                              active
+                                ? 'bg-indigo-600/20 border-indigo-400/70'
+                                : done
+                                ? 'bg-slate-900/90 border-sky-500/35 hover:border-sky-400/60'
+                                : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
+                            }`}
+                          >
+                            <div
+                              className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-mono font-bold shrink-0 mt-0.5 ${
+                                done
+                                  ? 'bg-sky-400 text-slate-950'
+                                  : active
+                                  ? 'bg-indigo-500 text-white'
+                                  : 'bg-slate-800 text-slate-300'
+                              }`}
+                            >
+                              {done ? '✓' : m.index}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="text-[10px] font-mono text-sky-400">
+                                  {m.code}
+                                </span>
+                                <span className="text-[10px] font-mono text-slate-400">
+                                  {done ? 'Selesai ✓' : `+${m.xpReward} PTS`}
+                                </span>
+                              </div>
+                              <div className="text-xs font-semibold text-white line-clamp-2 mt-0.5">
+                                {m.title}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="lg:col-span-8 space-y-6">
+              <div className="glass-panel rounded-2xl p-6 sm:p-8 border border-slate-800 space-y-6">
+                <div className="flex flex-wrap items-start justify-between gap-4 pb-5 border-b border-slate-800">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-mono font-semibold ${
+                          activeModule.category === 'aljabar'
+                            ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                            : 'bg-sky-500/15 text-sky-300 border border-sky-500/30'
+                        }`}
+                      >
+                        {activeModule.code} • {activeModule.categoryLabel}
+                      </span>
+                      <span className="text-xs font-mono text-slate-400">
+                        ⏱ {activeModule.duration}
+                      </span>
+                    </div>
+                    <h3 className="font-display text-2xl sm:text-3xl font-bold text-white mt-2">
+                      {activeModule.title}
+                    </h3>
+                    <p className="text-slate-300 text-sm mt-1">{activeModule.subtitle}</p>
+                  </div>
+
+                  <button
+                    onClick={() => onToggleCompleteModule(activeModule.id, activeModule.xpReward)}
+                    className={`px-5 py-3 rounded-xl font-display font-bold text-sm transition flex items-center gap-2 shrink-0 ${
+                      isCurrentCompleted
+                        ? 'bg-emerald-500/20 border border-emerald-400/60 text-emerald-300'
+                        : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20'
+                    }`}
+                  >
+                    {isCurrentCompleted ? (
+                      <span>✓ Sub-Materi Selesai ({totalDone}/10)</span>
+                    ) : (
+                      <span>☑️ Tandai Selesai (+{activeModule.xpReward} Poin)</span>
+                    )}
+                  </button>
+                </div>
+
+                <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-800">
+                  <h4 className="text-xs font-mono uppercase tracking-wider text-sky-400 mb-2">
+                    💡 Penjelasan Konsep Inti
+                  </h4>
+                  <p className="text-slate-200 leading-relaxed text-sm sm:text-base">
+                    {activeModule.summary}
+                  </p>
+                </div>
+
+                <div>
+                  <h4 className="text-xs font-mono uppercase tracking-wider text-indigo-400 mb-3">
+                    📐 Rumus &amp; Aturan Penting
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {activeModule.keyFormulas.map((kf, idx) => (
+                      <div
+                        key={idx}
+                        className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-slate-700 transition"
+                      >
+                        <div className="text-xs font-mono text-slate-400">{kf.label}</div>
+                        <div className="font-mono-math text-base sm:text-lg font-bold text-sky-300 mt-1">
+                          {kf.expr}
+                        </div>
+                        <div className="text-xs text-slate-300 mt-1.5">{kf.desc}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3">
+                  <span className="text-xs font-mono uppercase text-indigo-300 font-bold">
+                    🧪 Contoh Soal &amp; Langkah Penyelesaian
+                  </span>
+                  <div className="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 font-medium text-white text-sm">
+                    <span className="text-sky-400 font-mono font-bold mr-2">[SOAL]</span>
+                    {activeModule.workedExample.problem}
+                  </div>
+                  <div className="space-y-2 pt-1">
+                    {activeModule.workedExample.steps.map((step, i) => (
+                      <div key={i} className="flex items-start gap-3 text-sm text-slate-200">
+                        <span className="w-6 h-6 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 font-mono text-xs flex items-center justify-center shrink-0 mt-0.5">
+                          {i + 1}
+                        </span>
+                        <span>{step}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono text-xs sm:text-sm font-bold">
+                    ✓ Hasil Akhir: {activeModule.workedExample.answer}
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 flex items-start gap-3">
+                  <span className="text-xl">⚡</span>
+                  <div>
+                    <div className="text-xs font-mono uppercase font-bold text-amber-300">
+                      Tips Cepat (Pro Tip)
+                    </div>
+                    <p className="text-xs sm:text-sm text-slate-200 mt-0.5">
+                      {activeModule.proTip}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono uppercase text-sky-400 font-bold">
+                      🎯 Uji Pemahaman Cepat ({activeModule.code})
+                    </span>
+                    {selectedQuizAnswer !== undefined && (
+                      <span
+                        className={`text-xs font-mono font-bold px-2.5 py-0.5 rounded-full ${
+                          selectedQuizAnswer === activeModule.miniQuiz.correctIndex
+                            ? 'bg-emerald-500/20 text-emerald-300'
+                            : 'bg-red-500/20 text-red-300'
+                        }`}
+                      >
+                        {selectedQuizAnswer === activeModule.miniQuiz.correctIndex
+                          ? '✓ Dijawab Tepat!'
+                          : '✗ Kurang Tepat'}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm sm:text-base font-semibold text-white">
+                    {activeModule.miniQuiz.question}
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {activeModule.miniQuiz.options.map((opt, idx) => {
+                      const isChosen = selectedQuizAnswer === idx;
+                      const isCorrect = idx === activeModule.miniQuiz.correctIndex;
+                      let btnStyle =
+                        'bg-slate-800/80 border-slate-700 text-slate-200 hover:border-indigo-400';
+                      if (selectedQuizAnswer !== undefined) {
+                        if (isCorrect) {
+                          btnStyle = 'bg-emerald-500/20 border-emerald-400 text-emerald-200';
+                        } else if (isChosen && !isCorrect) {
+                          btnStyle = 'bg-red-500/20 border-red-400 text-red-200';
+                        }
+                      }
+                      return (
+                        <button
+                          key={idx}
+                          onClick={() =>
+                            onAnswerMiniQuiz(
+                              activeModule.id,
+                              idx,
+                              idx === activeModule.miniQuiz.correctIndex
+                            )
+                          }
+                          className={`p-3 rounded-xl border text-left text-xs sm:text-sm font-mono transition flex items-center gap-2.5 ${btnStyle}`}
+                        >
+                          <span className="w-6 h-6 rounded-lg bg-slate-900 flex items-center justify-center text-xs font-bold shrink-0">
+                            {String.fromCharCode(65 + idx)}
+                          </span>
+                          <span>{opt}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {selectedQuizAnswer !== undefined && (
+                    <div className="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 text-xs text-slate-200">
+                      <strong className="text-sky-400 font-mono">Pembahasan: </strong>
+                      {activeModule.miniQuiz.explanation}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-slate-800">
+                  <div className="flex items-center gap-2">
+                    {activeModule.index > 1 && (
+                      <button
+                        onClick={() => {
+                          window.NexusSound.click();
+                          const prev = modules.find((m) => m.index === activeModule.index - 1);
+                          if (prev) setSelectedModuleId(prev.id);
+                        }}
+                        className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-mono text-slate-200 transition"
+                      >
+                        ← Sub-Materi Sebelumnya
+                      </button>
+                    )}
+                    {activeModule.index < 10 && (
+                      <button
+                        onClick={() => {
+                          window.NexusSound.click();
+                          const next = modules.find((m) => m.index === activeModule.index + 1);
+                          if (next) setSelectedModuleId(next.id);
+                        }}
+                        className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-mono text-sky-300 transition"
+                      >
+                        Sub-Materi Berikutnya →
+                      </button>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={() => onToggleCompleteModule(activeModule.id, activeModule.xpReward)}
+                    className={`px-5 py-2.5 rounded-xl font-display font-bold text-xs sm:text-sm transition ${
+                      isCurrentCompleted
+                        ? 'bg-slate-800 text-emerald-400 border border-emerald-500/40'
+                        : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                    }`}
+                  >
+                    {isCurrentCompleted
+                      ? '✓ Sudah Ditandai Selesai (Klik jika ingin batal)'
+                      : `☑️ Tandai Selesai & Klaim +${activeModule.xpReward} Poin`}
+                  </button>
+                </div>
+              </div>
+
+              {/* Interactive Math Simulators */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="glass-panel rounded-2xl p-5 border border-slate-800 space-y-3">
+                  <div className="text-xs font-mono text-emerald-400 font-bold uppercase">
+                    🔬 Lab Interaktif Aljabar: Faktorisasi (x + p)(x + q)
+                  </div>
+                  <p className="text-xs text-slate-300">
+                    Geser nilai <code className="text-emerald-300">p</code> dan <code className="text-emerald-300">q</code> untuk mengamati perubahan <code className="text-sky-300">b = p+q</code> dan <code className="text-indigo-300">c = p×q</code>!
+                  </p>
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <label className="text-xs font-mono text-slate-400 flex justify-between">
+                        <span>Nilai p:</span>
+                        <span className="text-emerald-400 font-bold">{simP}</span>
+                      </label>
+                      <input
+                        type="range"
+                        min="-6"
+                        max="6"
+                        value={simP}
+                        onChange={(e) => setSimP(Number(e.target.value))}
+                        className="w-full accent-emerald-400 mt-1"
+                      />
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <label className="text-xs font-mono text-slate-400 flex justify-between">
+                        <span>Nilai q:</span>
+                        <span className="text-sky-400 font-bold">{simQ}</span>
+                      </label>
+                      <input
+                        type="range"
+                        min="-6"
+                        max="6"
+                        value={simQ}
+                        onChange={(e) => setSimQ(Number(e.target.value))}
+                        className="w-full accent-sky-400 mt-1"
+                      />
+                    </div>
+                  </div>
+                  <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 font-mono text-xs space-y-1">
+                    <div className="text-slate-300">
+                      Faktor: <span className="text-emerald-300 font-bold">(x {simP >= 0 ? `+ ${simP}` : `- ${Math.abs(simP)}`})(x {simQ >= 0 ? `+ ${simQ}` : `- ${Math.abs(simQ)}`}) = 0</span>
+                    </div>
+                    <div className="text-white text-sm font-bold">
+                      Persamaan: x² {simP + simQ >= 0 ? `+ ${simP + simQ}x` : `- ${Math.abs(simP + simQ)}x`} {simP * simQ >= 0 ? `+ ${simP * simQ}` : `- ${Math.abs(simP * simQ)}`} = 0
+                    </div>
+                    <div className="text-sky-300">
+                      Akar Penyelesaian: x₁ = {-simP}  atau  x₂ = {-simQ}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="glass-panel rounded-2xl p-5 border border-slate-800 space-y-3">
+                  <div className="text-xs font-mono text-sky-400 font-bold uppercase">
+                    🔬 Lab Interaktif SPLDV: Kalkulator Titik Potong (x, y)
+                  </div>
+                  <p className="text-xs text-slate-300">
+                    Ubah koefisien persamaan 1 dan 2 untuk melihat solusi <code className="text-sky-300">(x, y)</code> secara instan:
+                  </p>
+                  <div className="space-y-2 text-xs font-mono">
+                    <div className="flex items-center gap-1.5 bg-slate-900 p-2 rounded-xl border border-slate-800">
+                      <span className="text-sky-400">L₁:</span>
+                      <input
+                        type="number"
+                        value={spldvSim.a1}
+                        onChange={(e) => setSpldvSim({ ...spldvSim, a1: Number(e.target.value) })}
+                        className="w-12 px-1.5 py-1 rounded bg-slate-800 text-center text-white border border-slate-700"
+                      />
+                      <span>x +</span>
+                      <input
+                        type="number"
+                        value={spldvSim.b1}
+                        onChange={(e) => setSpldvSim({ ...spldvSim, b1: Number(e.target.value) })}
+                        className="w-12 px-1.5 py-1 rounded bg-slate-800 text-center text-white border border-slate-700"
+                      />
+                      <span>y =</span>
+                      <input
+                        type="number"
+                        value={spldvSim.c1}
+                        onChange={(e) => setSpldvSim({ ...spldvSim, c1: Number(e.target.value) })}
+                        className="w-14 px-1.5 py-1 rounded bg-slate-800 text-center text-emerald-300 border border-slate-700"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1.5 bg-slate-900 p-2 rounded-xl border border-slate-800">
+                      <span className="text-indigo-400">L₂:</span>
+                      <input
+                        type="number"
+                        value={spldvSim.a2}
+                        onChange={(e) => setSpldvSim({ ...spldvSim, a2: Number(e.target.value) })}
+                        className="w-12 px-1.5 py-1 rounded bg-slate-800 text-center text-white border border-slate-700"
+                      />
+                      <span>x +</span>
+                      <input
+                        type="number"
+                        value={spldvSim.b2}
+                        onChange={(e) => setSpldvSim({ ...spldvSim, b2: Number(e.target.value) })}
+                        className="w-12 px-1.5 py-1 rounded bg-slate-800 text-center text-white border border-slate-700"
+                      />
+                      <span>y =</span>
+                      <input
+                        type="number"
+                        value={spldvSim.c2}
+                        onChange={(e) => setSpldvSim({ ...spldvSim, c2: Number(e.target.value) })}
+                        className="w-14 px-1.5 py-1 rounded bg-slate-800 text-center text-emerald-300 border border-slate-700"
+                      />
+                    </div>
+                  </div>
+                  <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 font-mono text-xs">
+                    {spldvSolution.valid ? (
+                      <div className="space-y-1">
+                        <div className="text-slate-300">
+                          Determinan Sistem: <span className="text-sky-300">{spldvSolution.det}</span>
+                        </div>
+                        <div className="text-sm font-bold text-emerald-300">
+                          Solusi Titik Potong (x, y) = ({spldvSolution.x}, {spldvSolution.y})
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-amber-300">{spldvSolution.message}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ========================================================================
+    // MINI-GAME 1 ENGINE: DRAG & DROP EXPRESSIONS REACTOR (BELAJAR RINGAN)
+    // ========================================================================
+    function Game1DragDropReactor({ levelData, selectedLevel, onRecordGameAnswer, onCompleteRound }) {
+      const [waveIdx, setWaveIdx] = useState(0);
+      const [matchedIds, setMatchedIds] = useState([]);
+      const [draggedId, setDraggedId] = useState(null);
+      const [selectedCapsuleId, setSelectedCapsuleId] = useState(null);
+      const [hoverSlotId, setHoverSlotId] = useState(null);
+      const [wrongSlotId, setWrongSlotId] = useState(null);
+      const [feedbackMsg, setFeedbackMsg] = useState('Tarik (Drag) kapsul di sebelah kiri lalu jatuhkan (Drop) ke Reaktor jawaban yang tepat di sebelah kanan!');
+      const [sessionScore, setSessionScore] = useState(0);
+      const [sessionCorrect, setSessionCorrect] = useState(0);
+      const [totalAttempts, setTotalAttempts] = useState(0);
+      const [timeLeft, setTimeLeft] = useState(levelData.timeLimit || 90);
+      const [stepStartTime, setStepStartTime] = useState(Date.now());
+
+      const currentWave = levelData.waves[waveIdx];
+
+      const shuffledTargets = useMemo(() => {
+        if (!currentWave) return [];
+        const copy = [...currentWave.items];
+        if (copy.length >= 4) {
+          return [copy[2], copy[0], copy[3], copy[1]];
+        }
+        return copy.reverse();
+      }, [waveIdx, selectedLevel]);
+
+      useEffect(() => {
+        setWaveIdx(0);
+        setMatchedIds([]);
+        setDraggedId(null);
+        setSelectedCapsuleId(null);
+        setSessionScore(0);
+        setSessionCorrect(0);
+        setTotalAttempts(0);
+        setTimeLeft(levelData.timeLimit || 90);
+        setStepStartTime(Date.now());
+        setFeedbackMsg('Tarik (Drag) kapsul di sebelah kiri lalu jatuhkan (Drop) ke Reaktor jawaban yang tepat di sebelah kanan!');
+      }, [selectedLevel]);
+
+      useEffect(() => {
+        const timer = setInterval(() => {
+          setTimeLeft((prev) => {
+            if (prev <= 1) {
+              clearInterval(timer);
+              onCompleteRound({
+                sessionScore,
+                sessionCorrect,
+                totalQuestions: Math.max(totalAttempts, 8)
+              });
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+        return () => clearInterval(timer);
+      }, [selectedLevel, sessionScore, sessionCorrect, totalAttempts]);
+
+      const verifyMatch = (sourceId, targetItem) => {
+        if (!sourceId || matchedIds.includes(sourceId)) return;
+        const elapsedSec = Math.max(1, Math.round((Date.now() - stepStartTime) / 1000));
+        setStepStartTime(Date.now());
+        setTotalAttempts((p) => p + 1);
+
+        if (sourceId === targetItem.id) {
+          window.NexusSound.dropSnap();
+          window.NexusSound.correct();
+          const pts = levelData.pointsPerCorrect;
+          const nextMatched = [...matchedIds, sourceId];
+          setMatchedIds(nextMatched);
+          setSessionScore((s) => s + pts);
+          setSessionCorrect((c) => c + 1);
+          setSelectedCapsuleId(null);
+          setDraggedId(null);
+          setFeedbackMsg(`✅ Tepat Sekali! ${targetItem.expr} = ${targetItem.target} (+${pts} Poin)`);
+
+          onRecordGameAnswer({
+            gameId: 'game-speed',
+            level: selectedLevel,
+            isCorrect: true,
+            pointsEarned: pts,
+            elapsedSec
+          });
+
+          if (nextMatched.length === currentWave.items.length) {
+            setTimeout(() => {
+              if (waveIdx + 1 < levelData.waves.length) {
+                window.NexusSound.levelUp();
+                setWaveIdx((w) => w + 1);
+                setMatchedIds([]);
+                setFeedbackMsg('🚀 Gelombang 1 Selesai! Lanjut ke Gelombang 2!');
+              } else {
+                window.NexusSound.levelUp();
+                onCompleteRound({
+                  sessionScore: sessionScore + pts,
+                  sessionCorrect: sessionCorrect + 1,
+                  totalQuestions: totalAttempts + 1
+                });
+              }
+            }, 650);
+          }
+        } else {
+          window.NexusSound.wrong();
+          setWrongSlotId(targetItem.id);
+          setTimeout(() => setWrongSlotId(null), 500);
+          const sourceItem = currentWave.items.find((i) => i.id === sourceId);
+          setFeedbackMsg(
+            `💡 Belum pas! Petunjuk untuk "${sourceItem ? sourceItem.expr : ''}": ${
+              sourceItem ? sourceItem.hint : 'Hitung angka di depan huruf yang sama!'
+            }`
+          );
+          onRecordGameAnswer({
+            gameId: 'game-speed',
+            level: selectedLevel,
+            isCorrect: false,
+            pointsEarned: 0,
+            elapsedSec
+          });
+        }
+      };
+
+      return (
+        <div className="glass-panel rounded-2xl p-6 sm:p-8 border border-slate-800 space-y-6">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800">
+              <div className="text-[10px] font-mono text-slate-400 uppercase">GELOMBANG DRAG-DROP</div>
+              <div className="font-display text-lg font-bold text-white">
+                Wave {waveIdx + 1} / {levelData.waves.length}
+              </div>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800">
+              <div className="text-[10px] font-mono text-slate-400 uppercase">REAKTOR TERISI</div>
+              <div className="font-display text-lg font-bold text-sky-400">
+                {matchedIds.length} / {currentWave.items.length} Kapsul
+              </div>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800">
+              <div className="text-[10px] font-mono text-slate-400 uppercase">WAKTU SANTAI</div>
+              <div className={`font-display text-lg font-bold ${timeLeft <= 10 ? 'text-rose-400 animate-pulse' : 'text-indigo-300'}`}>
+                ⏱ {timeLeft} dtk
+              </div>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-900/90 border border-emerald-500/30">
+              <div className="text-[10px] font-mono text-slate-400 uppercase">POIN SESI</div>
+              <div className="font-display text-lg font-bold text-emerald-400">
+                +{sessionScore} PTS
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-950/90 border border-slate-800 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🧲</span>
+              <div>
+                <div className="text-xs font-mono text-emerald-400 uppercase font-bold">
+                  {currentWave.waveTitle} • Tarik &amp; Jatuhkan (Atau Klik Kiri lalu Klik Kanan)
+                </div>
+                <div className="text-sm text-slate-300 mt-0.5">{feedbackMsg}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between px-1">
+                <span className="text-xs font-mono uppercase font-bold text-sky-300">
+                  📦 KAPSUL SOAL ALJABAR (TARIK DARI SINI)
+                </span>
+                <span className="text-[11px] font-mono text-slate-400">Drag / Klik</span>
+              </div>
+
+              {currentWave.items.map((item) => {
+                const isMatched = matchedIds.includes(item.id);
+                const isSelected = selectedCapsuleId === item.id;
+                return (
+                  <div
+                    key={item.id}
+                    draggable={!isMatched}
+                    onDragStart={(e) => {
+                      if (isMatched) return;
+                      window.NexusSound.dragPickup();
+                      setDraggedId(item.id);
+                      setSelectedCapsuleId(item.id);
+                      e.dataTransfer.setData('text/plain', item.id);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedId(null);
+                      setHoverSlotId(null);
+                    }}
+                    onClick={() => {
+                      if (isMatched) return;
+                      window.NexusSound.dragPickup();
+                      setSelectedCapsuleId(item.id === selectedCapsuleId ? null : item.id);
+                    }}
+                    className={`p-4 rounded-2xl border transition flex items-center justify-between gap-3 ${
+                      isMatched
+                        ? 'bg-slate-900/40 border-slate-800 text-slate-600 opacity-45 cursor-not-allowed'
+                        : isSelected
+                        ? 'draggable-capsule bg-indigo-500/20 border-indigo-400 text-white glow-cyan scale-[1.01]'
+                        : 'draggable-capsule bg-slate-900/90 border-slate-700 text-white hover:border-indigo-400'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="w-8 h-8 rounded-lg bg-slate-950 border border-slate-700 flex items-center justify-center text-xs font-mono">
+                        {isMatched ? '✓' : '⠿'}
+                      </span>
+                      <span className="font-mono-math text-lg font-bold">
+                        {item.expr}
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-slate-950 text-sky-300 border border-slate-800">
+                      {isMatched ? 'Selesai ✓' : isSelected ? 'Klik Kanan →' : 'Tarik ➔'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between px-1">
+                <span className="text-xs font-mono uppercase font-bold text-emerald-400">
+                  ⚡ SLOT REAKTOR JAWABAN (DROP KE SINI)
+                </span>
+                <span className="text-[11px] font-mono text-slate-400">+{levelData.pointsPerCorrect} PTS / Slot</span>
+              </div>
+
+              {shuffledTargets.map((targetItem) => {
+                const isFilled = matchedIds.includes(targetItem.id);
+                const isHovered = hoverSlotId === targetItem.id;
+                const isWrong = wrongSlotId === targetItem.id;
+
+                return (
+                  <div
+                    key={targetItem.id}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      if (!isFilled && hoverSlotId !== targetItem.id) {
+                        setHoverSlotId(targetItem.id);
+                      }
+                    }}
+                    onDragLeave={() => setHoverSlotId(null)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setHoverSlotId(null);
+                      const droppedId = e.dataTransfer.getData('text/plain') || draggedId;
+                      verifyMatch(droppedId, targetItem);
+                    }}
+                    onClick={() => {
+                      if (!isFilled && selectedCapsuleId) {
+                        verifyMatch(selectedCapsuleId, targetItem);
+                      }
+                    }}
+                    className={`p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 ${
+                      isFilled
+                        ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-200 glow-green'
+                        : isWrong
+                        ? 'bg-rose-500/20 border-rose-500/50 text-rose-200 animate-shake'
+                        : isHovered
+                        ? 'drop-slot-highlight'
+                        : selectedCapsuleId
+                        ? 'bg-slate-950/90 border-dashed border-sky-400/60 hover:bg-sky-500/10'
+                        : 'bg-slate-950/85 border-dashed border-slate-700 hover:border-emerald-400/50'
+                    }`}
+                  >
+                    <div>
+                      <div className="text-[10px] font-mono uppercase text-slate-400">
+                        {isFilled ? `✓ PASANGAN DARI: ${targetItem.expr}` : 'HASIL SEDERHANA:'}
+                      </div>
+                      <div className="font-mono-math text-xl font-extrabold text-emerald-300 mt-0.5">
+                        = {targetItem.target}
+                      </div>
+                    </div>
+
+                    <div className="px-3 py-1.5 rounded-xl font-mono text-xs font-bold bg-slate-900 border border-slate-700 text-slate-300">
+                      {isFilled ? '🔒 Aktif' : selectedCapsuleId ? '📥 Klik Drop' : '📥 Drop Zone'}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ========================================================================
+    // MINI-GAME 2 ENGINE: KOTAK MISTERI ALJABAR (1-KLIK ISI ANGKA HILANG)
+    // ========================================================================
+    function Game2FactorPuzzleBuilder({ levelData, selectedLevel, onRecordGameAnswer, onCompleteRound }) {
+      const boxes = levelData.boxes;
+      const [boxIdx, setBoxIdx] = useState(0);
+      const [chosenVal, setChosenVal] = useState(null);
+      const [status, setStatus] = useState(null); // null | 'correct' | 'wrong'
+      const [sessionScore, setSessionScore] = useState(0);
+      const [sessionCorrect, setSessionCorrect] = useState(0);
+      const [startTime, setStartTime] = useState(Date.now());
+
+      const currentBox = boxes[boxIdx];
+
+      useEffect(() => {
+        setBoxIdx(0);
+        setChosenVal(null);
+        setStatus(null);
+        setSessionScore(0);
+        setSessionCorrect(0);
+        setStartTime(Date.now());
+      }, [selectedLevel]);
+
+      const handlePickNumber = (val) => {
+        if (status === 'correct') return;
+        const elapsedSec = Math.max(1, Math.round((Date.now() - startTime) / 1000));
+        setChosenVal(val);
+
+        if (String(val) === String(currentBox.answer)) {
+          window.NexusSound.dropSnap();
+          window.NexusSound.correct();
+          const pts = levelData.pointsPerCorrect;
+          setStatus('correct');
+          setSessionScore((s) => s + pts);
+          setSessionCorrect((c) => c + 1);
+          onRecordGameAnswer({
+            gameId: 'game-factor',
+            level: selectedLevel,
+            isCorrect: true,
+            pointsEarned: pts,
+            elapsedSec
+          });
+        } else {
+          window.NexusSound.wrong();
+          setStatus('wrong');
+          onRecordGameAnswer({
+            gameId: 'game-factor',
+            level: selectedLevel,
+            isCorrect: false,
+            pointsEarned: 0,
+            elapsedSec
+          });
+        }
+      };
+
+      const handleNextBox = () => {
+        window.NexusSound.click();
+        if (boxIdx + 1 < boxes.length) {
+          setBoxIdx((i) => i + 1);
+          setChosenVal(null);
+          setStatus(null);
+          setStartTime(Date.now());
+        } else {
+          window.NexusSound.levelUp();
+          onCompleteRound({
+            sessionScore,
+            sessionCorrect,
+            totalQuestions: boxes.length
+          });
+        }
+      };
+
+      return (
+        <div className="glass-panel rounded-2xl p-6 sm:p-8 border border-slate-800 space-y-6">
+          <div className="grid grid-cols-3 gap-3">
+            <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800">
+              <div className="text-[10px] font-mono text-slate-400">KOTAK MISTERI</div>
+              <div className="font-display text-lg font-bold text-white">
+                #{boxIdx + 1} / {boxes.length}
+              </div>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800">
+              <div className="text-[10px] font-mono text-slate-400">POIN PER SOAL</div>
+              <div className="font-display text-lg font-bold text-indigo-300">
+                +{levelData.pointsPerCorrect} PTS
+              </div>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-900/90 border border-emerald-500/30">
+              <div className="text-[10px] font-mono text-slate-400">POIN SESI INI</div>
+              <div className="font-display text-lg font-bold text-emerald-400">
+                +{sessionScore} PTS
+              </div>
+            </div>
+          </div>
+
+          <div className="p-6 sm:p-8 rounded-2xl bg-slate-950/90 border border-slate-800 text-center space-y-5">
+            <span className="px-3.5 py-1 rounded-full text-xs font-mono bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+              🔢 KLIK 1 ANGKA UNTUK MENGISI KOTAK MISTERI [ ? ]
+            </span>
+
+            {/* Persamaan dengan 1 Kotak Misteri [ ? ] */}
+            <div className="py-4 flex flex-wrap items-center justify-center gap-3 font-mono-math text-2xl sm:text-3xl font-extrabold text-white">
+              <span>{currentBox.leftSide}</span>
+              <span
+                className={`min-w-[84px] px-5 py-2.5 rounded-2xl border-2 inline-flex items-center justify-center transition-all ${
+                  status === 'correct'
+                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 glow-green scale-105'
+                    : status === 'wrong'
+                    ? 'bg-rose-500/20 border-rose-400 text-rose-300 animate-shake'
+                    : 'bg-slate-900 border-dashed border-sky-400 text-sky-300 animate-pulse'
+                }`}
+              >
+                {chosenVal !== null ? chosenVal : '?'}
+              </span>
+              {currentBox.rightSide && <span>{currentBox.rightSide}</span>}
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 text-xs sm:text-sm font-mono text-slate-300 max-w-xl mx-auto">
+              💡 <strong className="text-emerald-400">Petunjuk Mudah:</strong> {currentBox.clue}
+            </div>
+          </div>
+
+          {/* 6 Pilihan Tombol Angka (Langsung Klik 1 Saja) */}
+          <div className="space-y-3">
+            <div className="text-xs font-mono uppercase text-sky-300 font-bold text-center">
+              👇 KLIK SALAH SATU ANGKA DI BAWAH UNTUK MENGISI KOTAK [ ? ]:
+            </div>
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+              {currentBox.choices.map((val) => {
+                const isChosen = String(chosenVal) === String(val);
+                const isRight = isChosen && status === 'correct';
+                const isWrong = isChosen && status === 'wrong';
+
+                return (
+                  <button
+                    key={val}
+                    disabled={status === 'correct'}
+                    onClick={() => handlePickNumber(val)}
+                    className={`py-4 rounded-2xl font-mono-math font-extrabold text-xl border transition ${
+                      isRight
+                        ? 'bg-emerald-500 text-white border-emerald-400 glow-green scale-105'
+                        : isWrong
+                        ? 'bg-rose-500/25 border-rose-500/50 text-rose-200'
+                        : 'bg-slate-900/90 border-slate-700 text-white hover:border-indigo-400 hover:bg-slate-800 active:scale-95'
+                    }`}
+                  >
+                    {val}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {status === 'wrong' && (
+            <div className="p-4 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs sm:text-sm font-mono text-center animate-shake">
+              💡 Angka <strong>{chosenVal}</strong> belum tepat! Coba lihat petunjuk di atas lalu klik angka lainnya!
+            </div>
+          )}
+
+          {status === 'correct' && (
+            <div className="p-5 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 space-y-3 animate-pop">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="font-display font-bold text-lg text-emerald-300">
+                  ✅ Tepat Sekali! Kotak terisi dengan angka {chosenVal} (+{levelData.pointsPerCorrect} Poin)
+                </div>
+                <button
+                  onClick={handleNextBox}
+                  className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-display font-bold text-sm transition"
+                >
+                  {boxIdx + 1 < boxes.length ? 'Kotak Misteri Berikutnya →' : 'Selesaikan Misi 🏆'}
+                </button>
+              </div>
+              <p className="text-xs sm:text-sm font-mono text-slate-300">
+                {currentBox.explanation}
+              </p>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ========================================================================
+    // MINI-GAME 3 ENGINE: SPLDV HUNTER — 1-KLIK KARTU JURUS SERANG BOSS!
+    // ========================================================================
+    function Game3HeroVillainBattle({
+      user,
+      levelData,
+      selectedLevel,
+      onRecordGameAnswer,
+      onCompleteRound
+    }) {
+      const boss = levelData.boss;
+      const battles = levelData.battles;
+
+      const [battleIdx, setBattleIdx] = useState(0);
+      const [heroHp, setHeroHp] = useState(100);
+      const [bossHp, setBossHp] = useState(boss.maxHp);
+      const [selectedOptionIdx, setSelectedOptionIdx] = useState(null);
+      const [combatState, setCombatState] = useState('idle');
+      const [combatLog, setCombatLog] = useState(boss.taunt);
+      const [damagePopup, setDamagePopup] = useState(null);
+      const [sessionScore, setSessionScore] = useState(0);
+      const [sessionCorrect, setSessionCorrect] = useState(0);
+      const [turnStartTime, setTurnStartTime] = useState(Date.now());
+
+      const currentBattle = battles[battleIdx];
+
+      useEffect(() => {
+        setBattleIdx(0);
+        setHeroHp(100);
+        setBossHp(levelData.boss.maxHp);
+        setSelectedOptionIdx(null);
+        setCombatState('idle');
+        setCombatLog(levelData.boss.taunt);
+        setDamagePopup(null);
+        setSessionScore(0);
+        setSessionCorrect(0);
+        setTurnStartTime(Date.now());
+      }, [selectedLevel]);
+
+      const handleSelectAttackCard = (opt, idx) => {
+        if (combatState === 'turn-won') return;
+        setSelectedOptionIdx(idx);
+        const elapsedSec = Math.max(1, Math.round((Date.now() - turnStartTime) / 1000));
+
+        if (opt.isCorrect) {
+          window.NexusSound.laserAttack();
+          const dmg = currentBattle.damage;
+          const pts = levelData.pointsPerCorrect;
+
+          setCombatState('hero-attack');
+          setDamagePopup({ target: 'boss', text: `-${dmg} HP!` });
+          const nextBossHp = Math.max(0, bossHp - dmg);
+          setBossHp(nextBossHp);
+          setSessionScore((s) => s + pts);
+          setSessionCorrect((c) => c + 1);
+
+          setCombatLog(
+            `⚔️ SERANGAN TELAK! Jurus (${opt.label}) menghancurkan perisai ${boss.name}! (${currentBattle.explanation})`
+          );
+
+          onRecordGameAnswer({
+            gameId: 'game-hunter',
+            level: selectedLevel,
+            isCorrect: true,
+            pointsEarned: pts,
+            elapsedSec
+          });
+
+          setTimeout(() => {
+            setDamagePopup(null);
+            setCombatState('turn-won');
+            if (nextBossHp <= 0) {
+              window.NexusSound.bossDefeated();
+            }
+          }, 600);
+        } else {
+          window.NexusSound.heroHurt();
+          setCombatState('villain-attack');
+          const enemyDmg = boss.attackDamage;
+          setDamagePopup({ target: 'hero', text: `-${enemyDmg} HP!` });
+          const nextHeroHp = Math.max(10, heroHp - enemyDmg);
+          setHeroHp(nextHeroHp);
+
+          setCombatLog(
+            `💥 ${boss.name} menangkis seranganmu! Petunjuk: ${currentBattle.explanation}`
+          );
+
+          onRecordGameAnswer({
+            gameId: 'game-hunter',
+            level: selectedLevel,
+            isCorrect: false,
+            pointsEarned: 0,
+            elapsedSec
+          });
+
+          setTimeout(() => {
+            setDamagePopup(null);
+            setCombatState('idle');
+          }, 600);
+        }
+      };
+
+      const handleNextTurn = () => {
+        window.NexusSound.click();
+        if (battleIdx + 1 < battles.length && bossHp > 0) {
+          const nextIdx = battleIdx + 1;
+          setBattleIdx(nextIdx);
+          setSelectedOptionIdx(null);
+          setCombatState('idle');
+          setCombatLog(`${boss.name} memasang perisai persamaan tahap ke-${nextIdx + 1}!`);
+          setTurnStartTime(Date.now());
+        } else {
+          window.NexusSound.bossDefeated();
+          onCompleteRound({
+            sessionScore,
+            sessionCorrect,
+            totalQuestions: battles.length
+          });
+        }
+      };
+
+      return (
+        <div className="space-y-6">
+          <div className="glass-panel rounded-2xl p-6 border border-slate-800 relative overflow-hidden">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center relative z-10">
+              <div
+                className={`md:col-span-5 p-4 rounded-2xl bg-slate-900/90 border border-emerald-500/40 transition ${
+                  combatState === 'hero-attack'
+                    ? 'animate-hero-attack glow-green'
+                    : combatState === 'villain-attack'
+                    ? 'animate-hit-flash border-rose-500'
+                    : ''
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className="relative">
+                    <div className="w-16 h-16 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center text-4xl">
+                      {user.avatar || '🦸‍♂️'}
+                    </div>
+                    {damagePopup && damagePopup.target === 'hero' && (
+                      <span className="absolute -top-6 left-0 font-display font-extrabold text-rose-400 text-lg animate-damage-float">
+                        {damagePopup.text}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 font-bold">
+                        HERO ({user.kelas})
+                      </span>
+                      <span className="text-xs font-mono font-bold text-emerald-400">
+                        ❤️ {heroHp}/100 HP
+                      </span>
+                    </div>
+                    <h4 className="font-display text-lg font-bold text-white mt-1">
+                      {user.name}
+                    </h4>
+                    <div className="w-full h-2.5 rounded-full bg-slate-950 overflow-hidden border border-slate-800 mt-1.5">
+                      <div
+                        className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500"
+                        style={{ width: `${heroHp}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="md:col-span-2 flex flex-col items-center justify-center text-center">
+                <div className="w-12 h-12 rounded-full bg-indigo-600 border border-indigo-400 flex items-center justify-center font-display font-extrabold text-white shadow-md">
+                  VS
+                </div>
+                <span className="text-[11px] font-mono text-slate-400 mt-1.5">
+                  Babak {battleIdx + 1}/{battles.length}
+                </span>
+                <span className="text-xs font-mono text-emerald-400 font-bold">
+                  +{sessionScore} PTS
+                </span>
+              </div>
+
+              <div
+                className={`md:col-span-5 p-4 rounded-2xl bg-slate-900/90 border border-rose-500/40 transition ${
+                  combatState === 'villain-attack'
+                    ? 'animate-villain-attack'
+                    : combatState === 'hero-attack'
+                    ? 'animate-hit-flash'
+                    : ''
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className="flex-1 text-right">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-mono font-bold text-rose-400">
+                        💀 {bossHp}/{boss.maxHp} HP
+                      </span>
+                      <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-rose-500/15 text-rose-300 font-bold">
+                        PENJAHAT LV.{selectedLevel}
+                      </span>
+                    </div>
+                    <h4 className="font-display text-lg font-bold text-white mt-1">
+                      {boss.name}
+                    </h4>
+                    <div className="w-full h-2.5 rounded-full bg-slate-950 overflow-hidden border border-slate-800 mt-1.5">
+                      <div
+                        className="h-full bg-gradient-to-r from-rose-600 to-amber-500 transition-all duration-500"
+                        style={{ width: `${(bossHp / boss.maxHp) * 100}%` }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  <div className="relative">
+                    <div className="w-16 h-16 rounded-2xl bg-rose-500/15 border border-rose-500/40 flex items-center justify-center text-4xl animate-float">
+                      {bossHp <= 0 ? '💥' : boss.avatar}
+                    </div>
+                    {damagePopup && damagePopup.target === 'boss' && (
+                      <span className="absolute -top-6 right-0 font-display font-extrabold text-emerald-400 text-lg animate-damage-float whitespace-nowrap">
+                        {damagePopup.text}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 text-xs sm:text-sm font-mono text-slate-300 flex items-center gap-3">
+              <span className="text-lg">📡</span>
+              <span>{combatLog}</span>
+            </div>
+          </div>
+
+          <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-6">
+            <div className="p-5 rounded-2xl bg-slate-950/90 border border-slate-800 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono uppercase text-sky-400 font-bold">
+                  🛡️ PERISAI SOAL PENJAHAT ({boss.name})
+                </span>
+                <span className="text-xs font-mono text-emerald-400 font-bold">
+                  +{levelData.pointsPerCorrect} Poin / Serangan Tepat
+                </span>
+              </div>
+
+              <p className="text-sm sm:text-base text-slate-200 font-medium leading-relaxed">
+                {currentBattle.story}
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {currentBattle.system.map((eq, idx) => (
+                  <div
+                    key={idx}
+                    className="p-3.5 rounded-xl bg-slate-900 border border-slate-700 text-center font-mono-math text-lg font-bold text-sky-300"
+                  >
+                    Persamaan ({idx + 1}): {eq}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 4 KARTU JURUS SERANGAN (KLIK 1 KARTU LANGSUNG MENEMBAK LASER KE BOSS!) */}
+            <div className="space-y-3">
+              <div className="text-xs font-mono uppercase text-emerald-400 font-bold">
+                ⚡ KLIK 1 KARTU JURUS JAWABAN DI BAWAH UNTUK LANGSUNG MENYERANG {boss.name.toUpperCase()}:
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {currentBattle.options.map((opt, idx) => {
+                  const isPicked = selectedOptionIdx === idx;
+                  const isWonCard = combatState === 'turn-won' && opt.isCorrect;
+                  const isWrongCard = isPicked && !opt.isCorrect && combatState !== 'turn-won';
+
+                  return (
+                    <button
+                      key={idx}
+                      disabled={combatState === 'turn-won'}
+                      onClick={() => handleSelectAttackCard(opt, idx)}
+                      className={`p-4 rounded-2xl border text-left transition flex items-center justify-between gap-3 ${
+                        isWonCard
+                          ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 glow-green'
+                          : isWrongCard
+                          ? 'bg-rose-500/20 border-rose-500/50 text-rose-200'
+                          : 'bg-slate-900/90 hover:bg-slate-800 border-slate-700 hover:border-indigo-400 text-white active:scale-[0.99]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="w-9 h-9 rounded-xl bg-slate-950 border border-slate-700 flex items-center justify-center font-display font-bold text-sm text-sky-300 shrink-0">
+                          ⚔️
+                        </span>
+                        <div>
+                          <div className="text-[10px] font-mono uppercase text-slate-400">
+                            KARTU JURUS {String.fromCharCode(65 + idx)}
+                          </div>
+                          <div className="font-mono-math text-base sm:text-lg font-extrabold text-white">
+                            {opt.label}
+                          </div>
+                        </div>
+                      </div>
+                      <span className="px-3 py-1.5 rounded-xl bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 font-mono text-xs font-bold shrink-0">
+                        {isWonCard ? '✓ TELAK!' : 'Serang ▶'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {combatState === 'turn-won' && (
+              <button
+                onClick={handleNextTurn}
+                className="w-full py-4 rounded-xl font-display font-bold text-base text-white bg-indigo-600 hover:bg-indigo-500 transition shadow-md animate-pop"
+              >
+                {bossHp <= 0
+                  ? `🏆 ${boss.name.toUpperCase()} KALAH! KLAIM KEMENANGAN!`
+                  : '⚔️ LANJUT KE SERANGAN BERIKUTNYA →'}
+              </button>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ========================================================================
+    // MINI-GAME 4 ENGINE: CARTESIAN RADAR SNIPER
+    // Mode Mudah: Garis & Titik terlihat.
+    // Mode Sedang & Sulit: Diagram Kartesius Polos (Cari sendiri koordinatnya!)
+    // ========================================================================
+    function Game4RadarSniperDuel({
+      levelData,
+      selectedLevel,
+      onRecordGameAnswer,
+      onCompleteRound
+    }) {
+      const missions = levelData.missions;
+      const [missionIdx, setMissionIdx] = useState(0);
+      const [aimX, setAimX] = useState(0);
+      const [aimY, setAimY] = useState(0);
+      const [firedResult, setFiredResult] = useState(null);
+      const [sessionScore, setSessionScore] = useState(0);
+      const [sessionCorrect, setSessionCorrect] = useState(0);
+      const [startTime, setStartTime] = useState(Date.now());
+
+      const currentMission = missions[missionIdx];
+
+      useEffect(() => {
+        setMissionIdx(0);
+        setAimX(0);
+        setAimY(0);
+        setFiredResult(null);
+        setSessionScore(0);
+        setSessionCorrect(0);
+        setStartTime(Date.now());
+      }, [selectedLevel]);
+
+      const minCoord = -6;
+      const maxCoord = 6;
+      const size = 360;
+      const step = size / (maxCoord - minCoord);
+      const toSvgX = (x) => (x - minCoord) * step;
+      const toSvgY = (y) => size - (y - minCoord) * step;
+
+      const getLineSegment = (line) => {
+        const { a, b, c } = line;
+        const pts = [];
+        if (Math.abs(b) > 0.0001) {
+          pts.push({ x: minCoord, y: (c - a * minCoord) / b });
+          pts.push({ x: maxCoord, y: (c - a * maxCoord) / b });
+        } else if (Math.abs(a) > 0.0001) {
+          const xVal = c / a;
+          pts.push({ x: xVal, y: minCoord });
+          pts.push({ x: xVal, y: maxCoord });
+        }
+        return pts;
+      };
+
+      const seg1 = getLineSegment(currentMission.line1);
+      const seg2 = getLineSegment(currentMission.line2);
+
+      // Di Mode Sedang & Sulit, garis dan titik TIDAK ditampilkan sebelum berhasil menembak!
+      const showLinesOnGraph = currentMission.showLinesPreview || firedResult === 'hit';
+      const showDotOnGraph = currentMission.showDotHint || firedResult === 'hit';
+
+      const handleFireSniper = () => {
+        if (firedResult === 'hit') return;
+        const elapsedSec = Math.max(1, Math.round((Date.now() - startTime) / 1000));
+        const isBullseye =
+          aimX === currentMission.intersection.x &&
+          aimY === currentMission.intersection.y;
+
+        if (isBullseye) {
+          window.NexusSound.laserAttack();
+          window.NexusSound.correct();
+          const pts = levelData.pointsPerCorrect;
+          setFiredResult('hit');
+          setSessionScore((s) => s + pts);
+          setSessionCorrect((c) => c + 1);
+          onRecordGameAnswer({
+            gameId: 'game-graph',
+            level: selectedLevel,
+            isCorrect: true,
+            pointsEarned: pts,
+            elapsedSec
+          });
+        } else {
+          window.NexusSound.wrong();
+          setFiredResult('miss');
+          onRecordGameAnswer({
+            gameId: 'game-graph',
+            level: selectedLevel,
+            isCorrect: false,
+            pointsEarned: 0,
+            elapsedSec
+          });
+        }
+      };
+
+      const handleNextMission = () => {
+        window.NexusSound.click();
+        if (missionIdx + 1 < missions.length) {
+          setMissionIdx((i) => i + 1);
+          setAimX(0);
+          setAimY(0);
+          setFiredResult(null);
+          setStartTime(Date.now());
+        } else {
+          window.NexusSound.levelUp();
+          onCompleteRound({
+            sessionScore,
+            sessionCorrect,
+            totalQuestions: missions.length
+          });
+        }
+      };
+
+      const gridValues = [];
+      for (let i = minCoord; i <= maxCoord; i++) gridValues.push(i);
+
+      return (
+        <div className="glass-panel rounded-2xl p-6 sm:p-8 border border-slate-800 space-y-6">
+          <div className="grid grid-cols-3 gap-3">
+            <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800">
+              <div className="text-[10px] font-mono text-slate-400">TARGET RADAR</div>
+              <div className="font-display text-lg font-bold text-white">
+                {missionIdx + 1} / {missions.length}
+              </div>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800">
+              <div className="text-[10px] font-mono text-slate-400">KOORDINAT BIDIKANMU</div>
+              <div className="font-mono-math text-lg font-bold text-sky-300">
+                ({aimX}, {aimY})
+              </div>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-900/90 border border-emerald-500/30">
+              <div className="text-[10px] font-mono text-slate-400">POIN RADAR</div>
+              <div className="font-display text-lg font-bold text-emerald-400">
+                +{sessionScore} PTS
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+            <div className="lg:col-span-7 flex flex-col items-center">
+              <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800 shadow-xl">
+                <svg
+                  viewBox={`0 0 ${size} ${size}`}
+                  className="w-72 h-72 sm:w-80 sm:h-80 select-none cursor-crosshair"
+                >
+                  {gridValues.map((g) => (
+                    <React.Fragment key={g}>
+                      <line
+                        x1={toSvgX(g)}
+                        y1={0}
+                        x2={toSvgX(g)}
+                        y2={size}
+                        stroke={g === 0 ? '#475569' : '#1e293b'}
+                        strokeWidth={g === 0 ? 2 : 1}
+                      />
+                      <line
+                        x1={0}
+                        y1={toSvgY(g)}
+                        x2={size}
+                        y2={toSvgY(g)}
+                        stroke={g === 0 ? '#475569' : '#1e293b'}
+                        strokeWidth={g === 0 ? 2 : 1}
+                      />
+                      {g !== 0 && (
+                        <>
+                          <text
+                            x={toSvgX(g)}
+                            y={toSvgY(0) + 13}
+                            fontSize="8.5"
+                            fill="#94a3b8"
+                            textAnchor="middle"
+                          >
+                            {g}
+                          </text>
+                          <text
+                            x={toSvgX(0) - 5}
+                            y={toSvgY(g) + 3}
+                            fontSize="8.5"
+                            fill="#94a3b8"
+                            textAnchor="end"
+                          >
+                            {g}
+                          </text>
+                        </>
+                      )}
+                    </React.Fragment>
+                  ))}
+
+                  {/* Garis hanya tampil di Mode Mudah atau setelah tembakan tepat sasaran */}
+                  {showLinesOnGraph && seg1.length === 2 && (
+                    <line
+                      x1={toSvgX(seg1[0].x)}
+                      y1={toSvgY(seg1[0].y)}
+                      x2={toSvgX(seg1[1].x)}
+                      y2={toSvgY(seg1[1].y)}
+                      stroke="#38bdf8"
+                      strokeWidth="3"
+                    />
+                  )}
+                  {showLinesOnGraph && seg2.length === 2 && (
+                    <line
+                      x1={toSvgX(seg2[0].x)}
+                      y1={toSvgY(seg2[0].y)}
+                      x2={toSvgX(seg2[1].x)}
+                      y2={toSvgY(seg2[1].y)}
+                      stroke="#818cf8"
+                      strokeWidth="3"
+                    />
+                  )}
+
+                  {/* Titik bantu hijau HANYA tampil di Mode Mudah (Level 1) atau setelah kena */}
+                  {showDotOnGraph && (
+                    <circle
+                      cx={toSvgX(currentMission.intersection.x)}
+                      cy={toSvgY(currentMission.intersection.y)}
+                      r="6"
+                      fill="rgba(16, 185, 129, 0.45)"
+                    />
+                  )}
+
+                  {/* Clickable Grid Nodes */}
+                  {gridValues.map((gx) =>
+                    gridValues.map((gy) => (
+                      <circle
+                        key={`${gx},${gy}`}
+                        cx={toSvgX(gx)}
+                        cy={toSvgY(gy)}
+                        r="9"
+                        fill="transparent"
+                        onClick={() => {
+                          if (firedResult === 'hit') return;
+                          window.NexusSound.click();
+                          setAimX(gx);
+                          setAimY(gy);
+                          setFiredResult(null);
+                        }}
+                      />
+                    ))
+                  )}
+
+                  {/* Player Sniper Crosshair */}
+                  <g transform={`translate(${toSvgX(aimX)}, ${toSvgY(aimY)})`}>
+                    <circle
+                      r="12"
+                      fill={firedResult === 'hit' ? 'rgba(16,185,129,0.28)' : 'rgba(99,102,241,0.22)'}
+                      stroke={firedResult === 'hit' ? '#10b981' : '#6366f1'}
+                      strokeWidth="2"
+                    />
+                    <line x1="-16" y1="0" x2="16" y2="0" stroke="#38bdf8" strokeWidth="1.5" />
+                    <line x1="0" y1="-16" x2="0" y2="16" stroke="#38bdf8" strokeWidth="1.5" />
+                    <circle r="3.5" fill="#38bdf8" />
+                  </g>
+                </svg>
+              </div>
+              <p className="text-xs font-mono text-slate-400 mt-2 text-center">
+                {currentMission.showDotHint
+                  ? '💡 Mode Mudah: Klik titik perpotongan garis pada grafik di atas lalu tekan TEMBAK!'
+                  : '🔍 Mode Mandiri (Sedang/Sulit): Cari sendiri nilai (x, y) dari kedua persamaan, lalu klik titik koordinatnya di grafik!'}
+              </p>
+            </div>
+
+            <div className="lg:col-span-5 space-y-4">
+              <div className="p-5 rounded-2xl bg-slate-950/90 border border-slate-800 space-y-3">
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-mono bg-sky-500/15 text-sky-300 border border-sky-500/30">
+                  🎯 {levelData.subtitle}
+                </span>
+                <h4 className="font-display text-lg font-bold text-white">
+                  {currentMission.prompt}
+                </h4>
+
+                <div className="space-y-2 pt-1">
+                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 font-mono-math text-base font-bold text-sky-300">
+                    Persamaan Garis 1: {currentMission.line1.label}
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 font-mono-math text-base font-bold text-indigo-300">
+                    Persamaan Garis 2: {currentMission.line2.label}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3">
+                <div className="text-xs font-mono uppercase text-slate-400 font-bold">
+                  🕹️ TOMBOL GESER BIDIKAN (X, Y):
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+                    <button
+                      onClick={() => {
+                        setFiredResult(null);
+                        setAimX((x) => Math.max(-5, x - 1));
+                      }}
+                      className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 font-bold text-white"
+                    >
+                      -
+                    </button>
+                    <span className="font-mono font-bold text-sky-300 text-sm">
+                      X = {aimX}
+                    </span>
+                    <button
+                      onClick={() => {
+                        setFiredResult(null);
+                        setAimX((x) => Math.min(5, x + 1));
+                      }}
+                      className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 font-bold text-white"
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+                    <button
+                      onClick={() => {
+                        setFiredResult(null);
+                        setAimY((y) => Math.max(-5, y - 1));
+                      }}
+                      className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 font-bold text-white"
+                    >
+                      -
+                    </button>
+                    <span className="font-mono font-bold text-indigo-300 text-sm">
+                      Y = {aimY}
+                    </span>
+                    <button
+                      onClick={() => {
+                        setFiredResult(null);
+                        setAimY((y) => Math.min(5, y + 1));
+                      }}
+                      className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 font-bold text-white"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {firedResult === 'miss' && (
+                <div className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs font-mono animate-shake">
+                  💡 Koordinat ({aimX}, {aimY}) belum tepat! Coba masukkan nilai x dan y pilihanmu ke dalam kedua persamaan untuk mengecek apakah hasilnya cocok!
+                </div>
+              )}
+
+              {firedResult === 'hit' ? (
+                <div className="p-4 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 space-y-3 animate-pop">
+                  <div className="font-display font-bold text-base text-emerald-300">
+                    🎯 TEPAT SASARAN! Titik Potong ({aimX}, {aimY}) (+{levelData.pointsPerCorrect} Poin)
+                  </div>
+                  <p className="text-xs font-mono text-slate-300">
+                    {currentMission.explanation}
+                  </p>
+                  <button
+                    onClick={handleNextMission}
+                    className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-display font-bold text-sm transition"
+                  >
+                    {missionIdx + 1 < missions.length ? 'Target Radar Berikutnya →' : 'Selesaikan Misi Radar 🏆'}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={handleFireSniper}
+                  className="w-full py-4 rounded-xl font-display font-bold text-base text-white bg-indigo-600 hover:bg-indigo-500 transition shadow-md"
+                >
+                  🎯 KUNCI &amp; TEMBAK KOORDINAT ({aimX}, {aimY})!
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ========================================================================
+    // COMPONENT 4: GAME CENTER CONTAINER
+    // ========================================================================
+    function GameCenterView({ state, initialGameId, onRecordGameAnswer, onFinishGameSession }) {
+      const games = window.NEXUS_DATA.games;
+      const [activeGameId, setActiveGameId] = useState(initialGameId || null);
+      const [selectedLevel, setSelectedLevel] = useState(1);
+      const [roundSummary, setRoundSummary] = useState(null);
+
+      useEffect(() => {
+        if (initialGameId) {
+          setActiveGameId(initialGameId);
+          setSelectedLevel(1);
+          setRoundSummary(null);
+        }
+      }, [initialGameId]);
+
+      const activeGame = games.find((g) => g.id === activeGameId);
+      const levelData = activeGame ? activeGame.levels[selectedLevel] : null;
+
+      const handleCompleteRound = ({ sessionScore, sessionCorrect, totalQuestions }) => {
+        setRoundSummary({ sessionScore, sessionCorrect, totalQuestions });
+        onFinishGameSession({
+          gameId: activeGame.id,
+          level: selectedLevel,
+          sessionScore
+        });
+      };
+
+      if (!activeGame) {
+        return (
+          <div className="space-y-6 animate-fade-slide">
+            <div className="glass-panel rounded-2xl p-6 sm:p-8 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <span className="px-3 py-1 rounded-full text-xs font-mono bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+                  🎮 GAME CENTER ARENA • EDISI BELAJAR RINGAN &amp; INTERAKTIF
+                </span>
+                <h2 className="font-display text-2xl sm:text-3xl font-bold text-white mt-2">
+                  Pilih Arena Permainan Matematikamu
+                </h2>
+                <p className="text-slate-300 text-sm mt-1">
+                  Soal dirancang ringan untuk latihan konsep: <strong className="text-emerald-400">Drag &amp; Drop Reactor</strong>, <strong className="text-teal-300">Kotak Misteri Aljabar</strong>, <strong className="text-indigo-300">Hero vs Villain Boss Battle</strong>, dan <strong className="text-sky-300">Radar Sniper</strong>!
+                </p>
+              </div>
+              <div className="bg-slate-900/90 border border-slate-800 rounded-2xl px-5 py-3 text-right shrink-0">
+                <div className="text-xs font-mono text-slate-400">TOTAL POIN PROFIL</div>
+                <div className="font-display text-2xl font-bold text-sky-400">
+                  {state.points} PTS
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {games.map((g) => {
+                const st = state.gameStats[g.id] || {};
+                const acc =
+                  st.totalAnswered > 0
+                    ? Math.round((st.correct / st.totalAnswered) * 100)
+                    : 0;
+                const isAljabar = g.category === 'aljabar';
+
+                return (
+                  <div
+                    key={g.id}
+                    className={`glass-card rounded-2xl p-6 flex flex-col justify-between border-t-4 ${
+                      isAljabar ? 'border-t-emerald-500' : 'border-t-indigo-500'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs font-mono font-bold ${
+                            isAljabar
+                              ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                              : 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30'
+                          }`}
+                        >
+                          GAME {g.number} • {g.badge}
+                        </span>
+                        <span className="text-xs font-mono text-slate-400 font-bold">
+                          {g.mechanicType}
+                        </span>
+                      </div>
+
+                      <h3 className="font-display text-2xl font-bold text-white mt-3">
+                        {g.title}
+                      </h3>
+                      <div className="text-xs font-mono text-slate-400 mt-0.5">
+                        Kategori: {g.categoryLabel}
+                      </div>
+                      <p className="text-slate-300 text-sm mt-2.5 leading-relaxed">
+                        {g.description}
+                      </p>
+
+                      <div className="grid grid-cols-3 gap-2 mt-4">
+                        {[1, 2, 3].map((lv) => (
+                          <button
+                            key={lv}
+                            onClick={() => {
+                              window.NexusSound.click();
+                              setActiveGameId(g.id);
+                              setSelectedLevel(lv);
+                              setRoundSummary(null);
+                            }}
+                            className="p-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-indigo-500/40 text-left transition"
+                          >
+                            <div className="text-[10px] font-mono text-slate-400">
+                              LEVEL {lv} ({lv === 1 ? 'Mudah' : lv === 2 ? 'Sedang' : 'Sulit'})
+                            </div>
+                            <div className="text-xs font-mono font-bold text-emerald-400 mt-0.5">
+                              +{g.levels[lv].pointsPerCorrect} Poin/Aksi
+                            </div>
+                            <div className="text-[10px] font-mono text-sky-300 mt-0.5">
+                              Best: {(st.bestByLevel && st.bestByLevel[lv]) || 0} PTS
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="mt-6 pt-4 border-t border-slate-800 flex items-center justify-between gap-4">
+                      <div className="text-xs font-mono text-slate-300">
+                        <span>Total Poin: <strong className="text-emerald-400">{st.pointsEarned || 0}</strong></span>
+                        <span className="mx-2">•</span>
+                        <span>Akurasi: <strong className="text-sky-300">{acc}%</strong></span>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          window.NexusSound.click();
+                          setActiveGameId(g.id);
+                          setSelectedLevel(1);
+                          setRoundSummary(null);
+                        }}
+                        className="px-5 py-2.5 rounded-xl font-display font-bold text-sm text-white bg-indigo-600 hover:bg-indigo-500 transition shadow-md"
+                      >
+                        Mainkan Sekarang ▶
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="space-y-6 animate-fade-slide">
+          <div className="glass-panel rounded-2xl p-5 border border-slate-800 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  window.NexusSound.click();
+                  setActiveGameId(null);
+                  setRoundSummary(null);
+                }}
+                className="px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-slate-200 hover:border-indigo-400 transition"
+              >
+                ← Kembali ke Game Center
+              </button>
+              <div>
+                <div className="text-xs font-mono text-sky-400 uppercase">
+                  {activeGame.badge} • {activeGame.categoryLabel}
+                </div>
+                <h2 className="font-display text-xl sm:text-2xl font-bold text-white">
+                  {activeGame.title}
+                </h2>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {[1, 2, 3].map((lv) => (
+                <button
+                  key={lv}
+                  onClick={() => {
+                    window.NexusSound.click();
+                    setSelectedLevel(lv);
+                    setRoundSummary(null);
+                  }}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-mono font-bold transition ${
+                    selectedLevel === lv
+                      ? 'bg-indigo-600 text-white shadow-md'
+                      : 'bg-slate-900 text-slate-300 border border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  Lv.{lv} {lv === 1 ? 'Mudah' : lv === 2 ? 'Sedang' : 'Sulit'} (+{activeGame.levels[lv].pointsPerCorrect}p)
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {roundSummary ? (
+            <div className="glass-panel rounded-2xl p-8 border border-emerald-500/40 text-center max-w-2xl mx-auto space-y-6 animate-pop">
+              <div className="w-20 h-20 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center text-4xl mx-auto glow-green">
+                🏆
+              </div>
+              <div>
+                <span className="text-xs font-mono uppercase text-emerald-400 font-bold">
+                  MISI LEVEL SELESAI
+                </span>
+                <h3 className="font-display text-3xl font-bold text-white mt-1">
+                  {activeGame.title} — {levelData.name}
+                </h3>
+                <p className="text-slate-300 text-sm mt-1">
+                  Poin sudah otomatis disimpan ke akunmu!
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
+                  <div className="text-xs font-mono text-slate-400">TOTAL POIN DIRAIH</div>
+                  <div className="font-display text-2xl font-bold text-emerald-400 mt-1">
+                    +{roundSummary.sessionScore} PTS
+                  </div>
+                </div>
+                <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
+                  <div className="text-xs font-mono text-slate-400">AKSI BERHASIL</div>
+                  <div className="font-display text-2xl font-bold text-sky-400 mt-1">
+                    {roundSummary.sessionCorrect} Tantangan
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                <button
+                  onClick={() => setRoundSummary(null)}
+                  className="px-5 py-3 rounded-xl bg-slate-900 border border-slate-700 text-white font-display font-bold text-sm hover:border-indigo-400"
+                >
+                  🔄 Main Ulang Level {selectedLevel}
+                </button>
+                {selectedLevel < 3 && (
+                  <button
+                    onClick={() => {
+                      setSelectedLevel(selectedLevel + 1);
+                      setRoundSummary(null);
+                    }}
+                    className="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-display font-bold text-sm transition"
+                  >
+                    🚀 Lanjut ke Level {selectedLevel + 1}
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setActiveGameId(null);
+                    setRoundSummary(null);
+                  }}
+                  className="px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-display font-bold text-sm"
+                >
+                  Pilih Mini-Game Lain
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {activeGame.id === 'game-speed' && (
+                <Game1DragDropReactor
+                  levelData={levelData}
+                  selectedLevel={selectedLevel}
+                  onRecordGameAnswer={onRecordGameAnswer}
+                  onCompleteRound={handleCompleteRound}
+                />
+              )}
+              {activeGame.id === 'game-factor' && (
+                <Game2FactorPuzzleBuilder
+                  levelData={levelData}
+                  selectedLevel={selectedLevel}
+                  onRecordGameAnswer={onRecordGameAnswer}
+                  onCompleteRound={handleCompleteRound}
+                />
+              )}
+              {activeGame.id === 'game-hunter' && (
+                <Game3HeroVillainBattle
+                  user={state.user}
+                  levelData={levelData}
+                  selectedLevel={selectedLevel}
+                  onRecordGameAnswer={onRecordGameAnswer}
+                  onCompleteRound={handleCompleteRound}
+                />
+              )}
+              {activeGame.id === 'game-graph' && (
+                <Game4RadarSniperDuel
+                  levelData={levelData}
+                  selectedLevel={selectedLevel}
+                  onRecordGameAnswer={onRecordGameAnswer}
+                  onCompleteRound={handleCompleteRound}
+                />
+              )}
+            </>
+          )}
+        </div>
+      );
+    }
+
+    // ========================================================================
+    // COMPONENT 5: HASIL AKHIR & ANALISIS PASSION
+    // ========================================================================
+    function PassionAnalysisView({ state, onAnswerPassionQuestion }) {
+      const { gameStats, completedModules, passionAnswers, user } = state;
+      const questions = window.NEXUS_DATA.passionQuestions;
+
+      const algG1 = gameStats['game-speed'] || {};
+      const algG2 = gameStats['game-factor'] || {};
+      const algTotalAnswered = (algG1.totalAnswered || 0) + (algG2.totalAnswered || 0);
+      const algCorrect = (algG1.correct || 0) + (algG2.correct || 0);
+      const algAccuracy = algTotalAnswered > 0 ? Math.round((algCorrect / algTotalAnswered) * 100) : 0;
+      const algPoints = (algG1.pointsEarned || 0) + (algG2.pointsEarned || 0);
+      const algTotalTime = (algG1.totalTimeSec || 0) + (algG2.totalTimeSec || 0);
+      const algAvgSpeed = algTotalAnswered > 0 ? (algTotalTime / algTotalAnswered).toFixed(1) : 0;
+      const algModulesDone = completedModules.filter((id) => id.startsWith('alg-')).length;
+
+      const splG3 = gameStats['game-hunter'] || {};
+      const splG4 = gameStats['game-graph'] || {};
+      const splTotalAnswered = (splG3.totalAnswered || 0) + (splG4.totalAnswered || 0);
+      const splCorrect = (splG3.correct || 0) + (splG4.correct || 0);
+      const splAccuracy = splTotalAnswered > 0 ? Math.round((splCorrect / splTotalAnswered) * 100) : 0;
+      const splPoints = (splG3.pointsEarned || 0) + (splG4.pointsEarned || 0);
+      const splTotalTime = (splG3.totalTimeSec || 0) + (splG4.totalTimeSec || 0);
+      const splAvgSpeed = splTotalAnswered > 0 ? (splTotalTime / splTotalAnswered).toFixed(1) : 0;
+      const splModulesDone = completedModules.filter((id) => id.startsWith('spldv-')).length;
+
+      const qValues = Object.values(passionAnswers || {});
+      const qAljabarCount = qValues.filter((v) => v === 'aljabar').length;
+      const qSpldvCount = qValues.filter((v) => v === 'spldv').length;
+
+      const aljabarCompositeScore = Math.min(
+        100,
+        Math.round(
+          algAccuracy * 0.45 +
+            algModulesDone * 6 +
+            Math.min(25, algPoints / 2) +
+            qAljabarCount * 5
+        )
+      );
+
+      const spldvCompositeScore = Math.min(
+        100,
+        Math.round(
+          splAccuracy * 0.45 +
+            splModulesDone * 6 +
+            Math.min(25, splPoints / 2) +
+            qSpldvCount * 5
+        )
+      );
+
+      let dominantCategory = 'Aljabar';
+      let dominantBadge = 'SYMBOLIC ALGEBRA ARCHITECT';
+      let dominantAccent = 'emerald';
+
+      if (spldvCompositeScore > aljabarCompositeScore) {
+        dominantCategory = 'SPLDV (Sistem Persamaan Linear Dua Variabel)';
+        dominantBadge = 'STRATEGIC SPLDV COMMANDER';
+        dominantAccent = 'sky';
+      } else if (
+        spldvCompositeScore === aljabarCompositeScore &&
+        spldvCompositeScore > 0
+      ) {
+        dominantCategory = 'Aljabar & SPLDV (Seimbang / All-Rounder)';
+        dominantBadge = 'DUAL NEXUS GRANDMASTER';
+        dominantAccent = 'indigo';
+      }
+
+      return (
+        <div className="space-y-6 animate-fade-slide">
+          <div className="glass-panel rounded-2xl p-6 sm:p-8 border border-slate-800 relative overflow-hidden">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+              <div className="space-y-3 max-w-3xl">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-xs font-mono font-bold">
+                  <span>✨ HASIL AKHIR &amp; ANALISIS PASSION MATEMATIKA</span>
+                </div>
+
+                <h2 className="font-display text-2xl sm:text-3xl font-bold text-white">
+                  Laporan Kecenderungan &amp; Bakat Matematika — {user.name} ({user.kelas})
+                </h2>
+
+                <div className="p-5 rounded-2xl bg-slate-950/90 border-l-4 border-l-indigo-500 border border-slate-800">
+                  <div className="text-xs font-mono uppercase text-sky-400 mb-1">
+                    🤖 Kesimpulan Otomatis Sistem Analisis:
+                  </div>
+                  <p className="text-base sm:text-lg font-medium text-white leading-relaxed">
+                    &ldquo;Berdasarkan performa game dan kuesionermu, kamu punya passion/kecenderungan lebih kuat di bagian{' '}
+                    <span className="font-display font-extrabold text-sky-400 underline decoration-indigo-400 underline-offset-4">
+                      [{dominantCategory}]
+                    </span>{' '}
+                    karena kecepatan dan ketelitianmu lebih menonjol di sana!&rdquo;
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 text-center sm:min-w-[250px] shrink-0">
+                <div className="text-4xl mb-2">
+                  {dominantAccent === 'emerald' ? '⚡' : dominantAccent === 'sky' ? '🎯' : '👑'}
+                </div>
+                <div className="text-[11px] font-mono text-slate-400 uppercase">
+                  PROFIL PASSION UTAMA
+                </div>
+                <div className="font-display text-lg font-bold text-sky-300 mt-1">
+                  {dominantBadge}
+                </div>
+                <div className="mt-3 pt-3 border-t border-slate-800 flex justify-around text-xs font-mono">
+                  <div>
+                    <div className="text-slate-400">Skor Aljabar</div>
+                    <div className="text-emerald-400 font-bold text-base">{aljabarCompositeScore}%</div>
+                  </div>
+                  <div>
+                    <div className="text-slate-400">Skor SPLDV</div>
+                    <div className="text-sky-400 font-bold text-base">{spldvCompositeScore}%</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="glass-panel rounded-2xl p-6 border-t-4 border-t-emerald-500 space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-mono uppercase text-emerald-400 font-bold">
+                    KATEGORI 01 • DRAG-DROP &amp; KOTAK MISTERI
+                  </span>
+                  <h3 className="font-display text-2xl font-bold text-white mt-0.5">
+                    Performa Kategori Aljabar
+                  </h3>
+                </div>
+                <div className="px-3.5 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 font-display font-bold text-xl text-emerald-300">
+                  {aljabarCompositeScore}%
+                </div>
+              </div>
+
+              <div className="w-full h-2.5 rounded-full bg-slate-950 overflow-hidden border border-slate-800">
+                <div
+                  className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500"
+                  style={{ width: `${Math.max(5, aljabarCompositeScore)}%` }}
+                ></div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800">
+                  <div className="text-xs font-mono text-slate-400">Akurasi Game Aljabar</div>
+                  <div className="font-display text-xl font-bold text-emerald-400 mt-1">
+                    {algAccuracy}%
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-mono">
+                    {algCorrect}/{algTotalAnswered} aksi tepat
+                  </div>
+                </div>
+                <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800">
+                  <div className="text-xs font-mono text-slate-400">Kecepatan Rata-rata</div>
+                  <div className="font-display text-xl font-bold text-emerald-300 mt-1">
+                    {algAvgSpeed > 0 ? `${algAvgSpeed} dtk/aksi` : 'Belum dimainkan'}
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-mono">
+                    Game 1 &amp; Game 2
+                  </div>
+                </div>
+                <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800">
+                  <div className="text-xs font-mono text-slate-400">Poin Game Aljabar</div>
+                  <div className="font-display text-xl font-bold text-white mt-1">
+                    {algPoints} PTS
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-mono">
+                    Speed Matcher &amp; Kotak Misteri
+                  </div>
+                </div>
+                <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800">
+                  <div className="text-xs font-mono text-slate-400">Progress Modul Aljabar</div>
+                  <div className="font-display text-xl font-bold text-white mt-1">
+                    {algModulesDone}/5 Modul
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-mono">
+                    Minat Kuesioner: {qAljabarCount}/5
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="glass-panel rounded-2xl p-6 border-t-4 border-t-indigo-500 space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-mono uppercase text-sky-400 font-bold">
+                    KATEGORI 02 • BOSS BATTLE RPG &amp; RADAR SNIPER
+                  </span>
+                  <h3 className="font-display text-2xl font-bold text-white mt-0.5">
+                    Performa Kategori SPLDV
+                  </h3>
+                </div>
+                <div className="px-3.5 py-2 rounded-xl bg-indigo-500/15 border border-indigo-500/30 font-display font-bold text-xl text-sky-300">
+                  {spldvCompositeScore}%
+                </div>
+              </div>
+
+              <div className="w-full h-2.5 rounded-full bg-slate-950 overflow-hidden border border-slate-800">
+                <div
+                  className="h-full bg-gradient-to-r from-indigo-500 to-sky-400 transition-all duration-500"
+                  style={{ width: `${Math.max(5, spldvCompositeScore)}%` }}
+                ></div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800">
+                  <div className="text-xs font-mono text-slate-400">Akurasi Game SPLDV</div>
+                  <div className="font-display text-xl font-bold text-sky-400 mt-1">
+                    {splAccuracy}%
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-mono">
+                    {splCorrect}/{splTotalAnswered} serangan tepat
+                  </div>
+                </div>
+                <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800">
+                  <div className="text-xs font-mono text-slate-400">Kecepatan Rata-rata</div>
+                  <div className="font-display text-xl font-bold text-sky-300 mt-1">
+                    {splAvgSpeed > 0 ? `${splAvgSpeed} dtk/aksi` : 'Belum dimainkan'}
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-mono">
+                    Game 3 &amp; Game 4
+                  </div>
+                </div>
+                <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800">
+                  <div className="text-xs font-mono text-slate-400">Poin Game SPLDV</div>
+                  <div className="font-display text-xl font-bold text-white mt-1">
+                    {splPoints} PTS
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-mono">
+                    Boss Battle &amp; Radar Sniper
+                  </div>
+                </div>
+                <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800">
+                  <div className="text-xs font-mono text-slate-400">Progress Modul SPLDV</div>
+                  <div className="font-display text-xl font-bold text-white mt-1">
+                    {splModulesDone}/5 Modul
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-mono">
+                    Minat Kuesioner: {qSpldvCount}/5
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="glass-panel rounded-2xl p-6 sm:p-8 border border-slate-800 space-y-5">
+            <div>
+              <span className="text-xs font-mono uppercase text-indigo-300 font-bold">
+                📋 KUESIONER PREFERENSI &amp; GAYA BERPIKIR
+              </span>
+              <h3 className="font-display text-xl sm:text-2xl font-bold text-white mt-0.5">
+                Kalibrasi Kuesioner Passion Matematika ({qValues.length}/5 Terjawab)
+              </h3>
+            </div>
+
+            <div className="space-y-4">
+              {questions.map((q, idx) => {
+                const currentAns = passionAnswers[q.id];
+                return (
+                  <div
+                    key={q.id}
+                    className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 space-y-3"
+                  >
+                    <div className="text-sm font-semibold text-white">
+                      <span className="text-sky-400 font-mono mr-2">0{idx + 1}.</span>
+                      {q.question}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {q.options.map((opt) => {
+                        const active = currentAns === opt.category;
+                        return (
+                          <button
+                            key={opt.category}
+                            onClick={() => {
+                              window.NexusSound.click();
+                              onAnswerPassionQuestion(q.id, opt.category);
+                            }}
+                            className={`p-3.5 rounded-xl border text-left text-xs sm:text-sm transition flex items-start gap-2.5 ${
+                              active
+                                ? opt.category === 'aljabar'
+                                  ? 'bg-emerald-500/15 border-emerald-400 text-emerald-200'
+                                  : 'bg-indigo-500/20 border-indigo-400 text-sky-200'
+                                : 'bg-slate-950/80 border-slate-800 text-slate-300 hover:border-slate-700'
+                            }`}
+                          >
+                            <span className="w-5 h-5 rounded-full border border-current flex items-center justify-center text-[10px] shrink-0 mt-0.5">
+                              {active ? '✓' : ''}
+                            </span>
+                            <div>
+                              <div className="font-medium">{opt.label}</div>
+                              <div className="text-[10px] font-mono uppercase opacity-75 mt-1">
+                                Kecenderungan: {opt.category.toUpperCase()}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ========================================================================
+    // MAIN APPLICATION CONTAINER WITH MULTI-ACCOUNT PERSISTENCE
+    // ========================================================================
+    function App() {
+      const [accountsDB, setAccountsDB] = useState(loadAccountsDB);
+      const [activeAccountId, setActiveAccountId] = useState(() => {
+        try {
+          const savedActive = localStorage.getItem(ACTIVE_USER_KEY);
+          const db = loadAccountsDB();
+          if (savedActive && db[savedActive]) return savedActive;
+          return null;
+        } catch (e) {
+          return null;
+        }
+      });
+
+      const [authView, setAuthView] = useState('landing'); // 'landing' | 'login'
+      const [activeTab, setActiveTab] = useState('dashboard');
+      const [materiSubCategory, setMateriSubCategory] = useState('all');
+      const [targetGameId, setTargetGameId] = useState(null);
+      const [muted, setMuted] = useState(window.NexusSound.isMuted());
+      const [toast, setToast] = useState(null);
+
+      // Sync accountsDB to localStorage whenever it updates
+      useEffect(() => {
+        saveAccountsDB(accountsDB);
+      }, [accountsDB]);
+
+      // Sync activeAccountId to localStorage
+      useEffect(() => {
+        try {
+          if (activeAccountId) {
+            localStorage.setItem(ACTIVE_USER_KEY, activeAccountId);
+          } else {
+            localStorage.removeItem(ACTIVE_USER_KEY);
+          }
+        } catch (e) {}
+      }, [activeAccountId]);
+
+      const currentProfile = activeAccountId ? accountsDB[activeAccountId] : null;
+
+      const updateCurrentProfile = (updater) => {
+        if (!activeAccountId) return;
+        setAccountsDB((prevDB) => {
+          const existing = prevDB[activeAccountId];
+          if (!existing) return prevDB;
+          const updated = updater(existing);
+          return {
+            ...prevDB,
+            [activeAccountId]: {
+              ...updated,
+              lastUpdated: new Date().toLocaleString('id-ID')
+            }
+          };
+        });
+      };
+
+      const showToast = (msg, type = 'success') => {
+        setToast({ msg, type });
+        setTimeout(() => {
+          setToast((prev) => (prev && prev.msg === msg ? null : prev));
+        }, 3200);
+      };
+
+      // Login or Resume Existing Account without losing any progress!
+      const handleLogin = (userData) => {
+        const accId = makeAccountId(userData.name, userData.kelas);
+        setAccountsDB((prevDB) => {
+          if (prevDB[accId]) {
+            // Resume existing account & update avatar if changed
+            return {
+              ...prevDB,
+              [accId]: {
+                ...prevDB[accId],
+                user: {
+                  ...prevDB[accId].user,
+                  avatar: userData.avatar || prevDB[accId].user.avatar
+                }
+              }
+            };
+          } else {
+            // Create new account profile
+            return {
+              ...prevDB,
+              [accId]: createBlankProfile(userData)
+            };
+          }
+        });
+        setActiveAccountId(accId);
+        setActiveTab('dashboard');
+        showToast(`Selamat datang, ${userData.name} (${userData.kelas})! Data belajarmu aktif.`);
+      };
+
+      // Logout keeps all progress saved in accountsDB
+      const handleLogoutKeepData = (targetScreen = 'landing') => {
+        window.NexusSound.click();
+        setActiveAccountId(null);
+        setTargetGameId(null);
+        setAuthView(targetScreen);
+      };
+
+      const handleDeleteSavedAccount = (accId) => {
+        window.NexusSound.click();
+        setAccountsDB((prevDB) => {
+          const copy = { ...prevDB };
+          delete copy[accId];
+          return copy;
+        });
+      };
+
+      const handleLoadDemo = () => {
+        window.NexusSound.levelUp();
+        const demoUser = {
+          name: 'Nadia Putri',
+          kelas: 'XI SIJA 1',
+          avatar: '🦸‍♀️'
+        };
+        const accId = makeAccountId(demoUser.name, demoUser.kelas);
+        const demoProfile = {
+          user: demoUser,
+          points: 118,
+          completedModules: ['alg-1', 'alg-2', 'alg-3', 'alg-4', 'spldv-1', 'spldv-2', 'spldv-3'],
+          moduleQuizDone: { 'alg-1': 0, 'alg-2': 0, 'spldv-1': 0 },
+          gameStats: {
+            'game-speed': {
+              played: 3,
+              correct: 9,
+              totalAnswered: 10,
+              pointsEarned: 32,
+              totalTimeSec: 65,
+              bestByLevel: { 1: 16, 2: 20, 3: 0 }
+            },
+            'game-factor': {
+              played: 2,
+              correct: 7,
+              totalAnswered: 8,
+              pointsEarned: 25,
+              totalTimeSec: 72,
+              bestByLevel: { 1: 8, 2: 20, 3: 0 }
+            },
+            'game-hunter': {
+              played: 2,
+              correct: 4,
+              totalAnswered: 5,
+              pointsEarned: 11,
+              totalTimeSec: 84,
+              bestByLevel: { 1: 6, 2: 10, 3: 0 }
+            },
+            'game-graph': {
+              played: 1,
+              correct: 3,
+              totalAnswered: 4,
+              pointsEarned: 9,
+              totalTimeSec: 60,
+              bestByLevel: { 1: 6, 2: 5, 3: 0 }
+            }
+          },
+          passionAnswers: {
+            q1: 'aljabar',
+            q2: 'aljabar',
+            q3: 'spldv',
+            q4: 'aljabar',
+            q5: 'aljabar'
+          },
+          lastUpdated: 'Hari Ini'
+        };
+        setAccountsDB((prev) => ({
+          ...prev,
+          [accId]: demoProfile
+        }));
+        setActiveAccountId(accId);
+        setActiveTab('dashboard');
+        showToast('Akun Demo (XI SIJA 1) berhasil dimuat & disimpan!');
+      };
+
+      const handleToggleCompleteModule = (moduleId, xpReward) => {
+        updateCurrentProfile((prev) => {
+          const exists = prev.completedModules.includes(moduleId);
+          let nextCompleted;
+          let nextPoints = prev.points;
+          if (exists) {
+            window.NexusSound.click();
+            nextCompleted = prev.completedModules.filter((id) => id !== moduleId);
+            nextPoints = Math.max(0, prev.points - xpReward);
+            showToast(`Status selesai dibatalkan (${nextCompleted.length}/10)`, 'info');
+          } else {
+            window.NexusSound.completeModule();
+            nextCompleted = [...prev.completedModules, moduleId];
+            nextPoints = prev.points + xpReward;
+            showToast(`Sub-Materi Selesai! +${xpReward} Poin tersimpan (${nextCompleted.length}/10)`);
+          }
+          return {
+            ...prev,
+            completedModules: nextCompleted,
+            points: nextPoints
+          };
+        });
+      };
+
+      const handleAnswerMiniQuiz = (moduleId, selectedIdx, isCorrect) => {
+        if (isCorrect) {
+          window.NexusSound.correct();
+        } else {
+          window.NexusSound.wrong();
+        }
+        updateCurrentProfile((prev) => {
+          const alreadyAnswered = prev.moduleQuizDone[moduleId] !== undefined;
+          return {
+            ...prev,
+            points: !alreadyAnswered && isCorrect ? prev.points + 2 : prev.points,
+            moduleQuizDone: {
+              ...prev.moduleQuizDone,
+              [moduleId]: selectedIdx
+            }
+          };
+        });
+      };
+
+      const handleRecordGameAnswer = ({ gameId, isCorrect, pointsEarned, elapsedSec }) => {
+        updateCurrentProfile((prev) => {
+          const cur = prev.gameStats[gameId] || {
+            played: 0,
+            correct: 0,
+            totalAnswered: 0,
+            pointsEarned: 0,
+            totalTimeSec: 0,
+            bestByLevel: { 1: 0, 2: 0, 3: 0 }
+          };
+          return {
+            ...prev,
+            points: prev.points + pointsEarned,
+            gameStats: {
+              ...prev.gameStats,
+              [gameId]: {
+                ...cur,
+                correct: cur.correct + (isCorrect ? 1 : 0),
+                totalAnswered: cur.totalAnswered + 1,
+                pointsEarned: cur.pointsEarned + pointsEarned,
+                totalTimeSec: cur.totalTimeSec + elapsedSec
+              }
+            }
+          };
+        });
+      };
+
+      const handleFinishGameSession = ({ gameId, level, sessionScore }) => {
+        updateCurrentProfile((prev) => {
+          const cur = prev.gameStats[gameId];
+          const prevBest = (cur.bestByLevel && cur.bestByLevel[level]) || 0;
+          return {
+            ...prev,
+            gameStats: {
+              ...prev.gameStats,
+              [gameId]: {
+                ...cur,
+                played: (cur.played || 0) + 1,
+                bestByLevel: {
+                  ...(cur.bestByLevel || { 1: 0, 2: 0, 3: 0 }),
+                  [level]: Math.max(prevBest, sessionScore)
+                }
+              }
+            }
+          };
+        });
+        showToast(`Misi selesai! +${sessionScore} Poin tersimpan di akunmu!`);
+      };
+
+      const handleAnswerPassionQuestion = (qId, category) => {
+        updateCurrentProfile((prev) => ({
+          ...prev,
+          passionAnswers: {
+            ...prev.passionAnswers,
+            [qId]: category
+          }
+        }));
+      };
+
+      if (!currentProfile) {
+        if (authView === 'login') {
+          return (
+            <LoginScreen
+              accountsDB={accountsDB}
+              onBackToLanding={() => setAuthView('landing')}
+              onLogin={handleLogin}
+              onDeleteSavedAccount={handleDeleteSavedAccount}
+              onLoadDemo={handleLoadDemo}
+            />
+          );
+        }
+        return (
+          <LandingScreen
+            accountsDB={accountsDB}
+            onGoToLogin={() => setAuthView('login')}
+            onLoadDemo={handleLoadDemo}
+          />
+        );
+      }
+
+      const levelInfo = getLevelInfo(currentProfile.points);
+      const navItems = [
+        { id: 'dashboard', label: 'Dashboard', icon: '🏠' },
+        { id: 'materi', label: `Materi (${currentProfile.completedModules.length}/10)`, icon: '📘' },
+        { id: 'games', label: 'Game Center', icon: '🎮' },
+        { id: 'passion', label: 'Analisis Passion', icon: '🧠' }
+      ];
+
+      return (
+        <div className="min-h-screen flex flex-col pb-20 md:pb-10">
+          {toast && (
+            <div className="fixed bottom-20 md:bottom-6 right-4 z-50 px-4 py-3 rounded-xl bg-slate-900/95 border border-indigo-400/50 text-slate-100 text-xs sm:text-sm font-mono shadow-xl animate-pop flex items-center gap-2">
+              <span>✨</span>
+              <span>{toast.msg}</span>
+            </div>
+          )}
+
+          <header className="sticky top-0 z-40 glass-panel border-b border-slate-800 px-4 py-3">
+            <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+              <div
+                onClick={() => setActiveTab('dashboard')}
+                className="flex items-center gap-3 cursor-pointer"
+              >
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-sky-500 flex items-center justify-center font-display font-bold text-lg text-white shadow-sm">
+                  ∑
+                </div>
+                <div>
+                  <div className="font-display font-bold text-base sm:text-lg text-white leading-none">
+                    NEXUS <span className="text-indigo-400">MATH</span>
+                  </div>
+                  <div className="text-[10px] font-mono text-slate-400 mt-0.5">
+                    ALJABAR &amp; SPLDV PORTAL
+                  </div>
+                </div>
+              </div>
+
+              <nav className="hidden md:flex items-center gap-1.5 bg-slate-900/90 p-1.5 rounded-2xl border border-slate-800">
+                {navItems.map((item) => {
+                  const active = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        window.NexusSound.click();
+                        setTargetGameId(null);
+                        setActiveTab(item.id);
+                      }}
+                      className={`px-4 py-2 rounded-xl text-xs font-mono font-semibold transition flex items-center gap-2 ${
+                        active
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                      }`}
+                    >
+                      <span>{item.icon}</span>
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+
+              <div className="flex items-center gap-2.5">
+                <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700/80 text-xs font-mono">
+                  <span className="text-emerald-400 font-bold">💎 {currentProfile.points} PTS</span>
+                  <span className="text-slate-600">|</span>
+                  <span className="text-sky-400 font-bold">Lv.{levelInfo.level}</span>
+                </div>
+
+                <button
+                  onClick={() => setMuted(window.NexusSound.toggleMute())}
+                  title={muted ? 'Aktifkan Suara' : 'Matikan Suara'}
+                  className="w-9 h-9 rounded-xl bg-slate-900 border border-slate-700/80 flex items-center justify-center text-sm hover:border-slate-500 transition"
+                >
+                  {muted ? '🔇' : '🔊'}
+                </button>
+
+                <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
+                  <span className="text-lg">{currentProfile.user.avatar}</span>
+                  <div className="hidden lg:block text-left">
+                    <div className="text-xs font-bold text-white leading-none">
+                      {currentProfile.user.name}
+                    </div>
+                    <div className="text-[10px] font-mono text-sky-400">
+                      {currentProfile.user.kelas}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleLogoutKeepData('login')}
+                    title="Ganti Akun (Data tetap tersimpan aman)"
+                    className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-mono transition"
+                  >
+                    Ganti Akun
+                  </button>
+                  <button
+                    onClick={() => handleLogoutKeepData('landing')}
+                    title="Keluar ke Halaman Awal (Data tetap tersimpan aman)"
+                    className="px-2.5 py-1.5 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-400/30 text-indigo-200 text-[11px] font-mono transition"
+                  >
+                    Keluar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          <main className="max-w-7xl w-full mx-auto px-4 pt-6 flex-1">
+            {activeTab === 'dashboard' && (
+              <DashboardView
+                state={currentProfile}
+                setActiveTab={setActiveTab}
+                onOpenModule={(cat) => {
+                  window.NexusSound.click();
+                  setMateriSubCategory(cat);
+                  setActiveTab('materi');
+                }}
+                onOpenGame={(gId) => {
+                  window.NexusSound.click();
+                  setTargetGameId(gId);
+                  setActiveTab('games');
+                }}
+              />
+            )}
+
+            {activeTab === 'materi' && (
+              <MateriView
+                state={currentProfile}
+                initialCategory={materiSubCategory}
+                onToggleCompleteModule={handleToggleCompleteModule}
+                onAnswerMiniQuiz={handleAnswerMiniQuiz}
+              />
+            )}
+
+            {activeTab === 'games' && (
+              <GameCenterView
+                state={currentProfile}
+                initialGameId={targetGameId}
+                onRecordGameAnswer={handleRecordGameAnswer}
+                onFinishGameSession={handleFinishGameSession}
+              />
+            )}
+
+            {activeTab === 'passion' && (
+              <PassionAnalysisView
+                state={currentProfile}
+                onAnswerPassionQuestion={handleAnswerPassionQuestion}
+              />
+            )}
+          </main>
+
+          <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 glass-panel border-t border-slate-800 px-2 py-2 flex items-center justify-around">
+            {navItems.map((item) => {
+              const active = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    window.NexusSound.click();
+                    setTargetGameId(null);
+                    setActiveTab(item.id);
+                  }}
+                  className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl text-[11px] font-mono font-semibold transition ${
+                    active
+                      ? 'bg-indigo-600 text-white'
+                      : 'text-slate-400'
+                  }`}
+                >
+                  <span className="text-base">{item.icon}</span>
+                  <span>{item.label.split(' ')[0]}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
